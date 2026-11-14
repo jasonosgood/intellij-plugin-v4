@@ -155,6 +155,7 @@
 28. Cleanup: `ExtractRuleOccurrences.matchRuns` is quadratic per alternative list;
     `deepestEnclosing` duplicates `Trees.getRootOfSubtreeEnclosingRegion` (and `ExtractRulePlan`
     walks the tree twice for the same token); `RefactorUtils.getCharIndexOfNextRuleStart` is dead.
-29. `doc/error2.txt` (stale IDE log) is staged; `doc/error.txt` is untracked. Unstage/delete.
+29. ~~`doc/error2.txt` (stale IDE log) is staged; `doc/error.txt` is untracked. Unstage/delete.~~
+    Done: both deleted, never committed.
 30. Extract Rule's `update()` can't cheaply check the selection's shape (needs a parse), so the
     action stays enabled and rejects on invoke with a hint. Revisit if 23 adds a cached parse.
