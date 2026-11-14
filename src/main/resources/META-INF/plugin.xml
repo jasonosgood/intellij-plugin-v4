@@ -88,14 +88,11 @@ For really big files and slow grammars, there is an appreciable delay when displ
   <!-- uncomment to enable plugin in all products -->
   <depends>com.intellij.modules.lang</depends>
 
-  <application-components>
-  </application-components>
-
-  <project-components>
-    <component>
-        <implementation-class>org.antlr.intellij.plugin.ANTLRv4PluginController</implementation-class>
-    </component>
-  </project-components>
+  <!-- ANTLRv4PluginController is a light project service (@Service), so it isn't listed here. -->
+  <projectListeners>
+    <listener class="org.antlr.intellij.plugin.GrammarEditorTabListener"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+  </projectListeners>
 
   <actions>
       <action id="antlr.Generate" class="org.antlr.intellij.plugin.actions.GenerateParserAction"
@@ -147,6 +144,13 @@ For really big files and slow grammars, there is an appreciable delay when displ
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">
+      <postStartupActivity implementation="org.antlr.intellij.plugin.ANTLRv4StartupActivity"/>
+      <toolWindow id="ANTLR Preview" anchor="bottom" canCloseContents="true"
+                  icon="/icons/org/antlr/intellij/plugin/toolWindowAntlr.svg"
+                  factoryClass="org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory"/>
+      <toolWindow id="Tool Output" anchor="bottom" canCloseContents="true"
+                  icon="/icons/org/antlr/intellij/plugin/toolWindowAntlr.svg"
+                  factoryClass="org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory"/>
       <formattingService implementation="org.antlr.intellij.plugin.format.GrammarFormattingService"/>
       <notificationGroup id="ANTLR Grammar Tools" displayType="BALLOON"/>
       <fileTypeFactory implementation="org.antlr.intellij.plugin.ANTLRv4FileTypeFactory"/>

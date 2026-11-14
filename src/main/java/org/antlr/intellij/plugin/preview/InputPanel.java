@@ -219,9 +219,10 @@ public class InputPanel {
 		final EditorFactory factory = EditorFactory.getInstance();
 		// For file input, doc is the file's shared, IDE-wide Document, which outlives this
 		// editor. Scope the listener to the editor (PreviewState.releaseEditor disposes it),
-		// with the project as backstop, or listeners pile up on each grammar switch and fire
+		// with the controller as backstop, or listeners pile up on each grammar switch and fire
 		// with stale grammars after the editor (or project) is gone.
-		Disposable listenerScope = Disposer.newDisposable(previewPanel.project, "ANTLR preview input listeners");
+		Disposable listenerScope = Disposer.newDisposable(
+			ANTLRv4PluginController.getInstance(previewPanel.project), "ANTLR preview input listeners");
 		doc.addDocumentListener(
 			new DocumentAdapter() {
 				@Override

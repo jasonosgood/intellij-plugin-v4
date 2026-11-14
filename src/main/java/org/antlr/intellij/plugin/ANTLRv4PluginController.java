@@ -1,26 +1,22 @@
 package org.antlr.intellij.plugin;
 
-import com.intellij.execution.filters.TextConsoleBuilder;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.execution.ui.ConsoleView;
-import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManager;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.components.ProjectComponent;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.event.EditorFactoryListener;
 import com.intellij.openapi.editor.event.EditorFactoryEvent;
-import com.intellij.openapi.editor.event.EditorMouseAdapter;
+import com.intellij.openapi.editor.event.EditorMouseListener;
 import com.intellij.openapi.editor.event.EditorMouseEvent;
-import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
-import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -30,17 +26,14 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileAdapter;
-import com.intellij.openapi.vfs.VirtualFileEvent;
+import com.intellij.openapi.vfs.newvfs.BulkFileListener;
+import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent;
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.PsiDocumentManager;
-import com.intellij.ui.content.Content;
-import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.concurrency.AppExecutorUtil;
-import com.intellij.util.messages.MessageBusConnection;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.antlr.intellij.plugin.preview.PreviewPanel;
@@ -52,10 +45,10 @@ import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
-import javax.swing.*;
 import java.io.File;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,32 +67,43 @@ import java.util.function.BooleanSupplier;
  *  This controller also manages the cache of grammar/editor combinations
  *  needed for the preview window. Updates must be made atomically so that
  *  the grammars and editors are consistently associated with the same window.
+ *  <p>
+ *  Lifecycle (prior art: the platform's "migrating components to services" guide): a
+ *  project service, so there is exactly one per project and the platform disposes it when
+ *  the project closes. Everything it owns (listeners, the console, the reparse queue,
+ *  preview editors) is registered against it as parent {@link Disposable}, so nothing
+ *  outlives the project and there is no manual uninstall. Editor tab events arrive through
+ *  {@link GrammarEditorTabListener}, declared in plugin.xml; the tool windows are declared
+ *  there too and get their content from {@link ANTLRv4ToolWindowFactory}. UI parts are
+ *  created on the EDT by {@link #projectOpened()}, run from {@link ANTLRv4StartupActivity}.
  */
-public class ANTLRv4PluginController implements ProjectComponent {
+@Service(Service.Level.PROJECT)
+public final class ANTLRv4PluginController implements Disposable {
 	/** Delay before telling the user that parsing is slow (the platform's progress postpone time). */
 	private static final int SLOW_PARSE_NOTICE_DELAY_MS = 300;
 
 	public static final String PLUGIN_ID = "org.antlr.intellij.plugin";
 
-	public static final Key<GrammarEditorMouseAdapter> EDITOR_MOUSE_LISTENER_KEY = Key.create("EDITOR_MOUSE_LISTENER_KEY");
+	public static final Key<GrammarEditorMouseListener> EDITOR_MOUSE_LISTENER_KEY = Key.create("EDITOR_MOUSE_LISTENER_KEY");
 	public static final Logger LOG = Logger.getInstance("ANTLRv4PluginController");
 
 	public static final String PREVIEW_WINDOW_ID = "ANTLR Preview";
 	public static final String CONSOLE_WINDOW_ID = "Tool Output";
 
+	/** Set when the project closes; background work and late EDT callbacks check it. */
 	public volatile boolean projectIsClosed = false;
 
-	public Project project;
-	public ConsoleView console;
-	private ToolWindow consoleWindow;
+	public final Project project;
+	private ConsoleView console;
+	private boolean opened; // projectOpened() has run; EDT only
 
-	public Map<String, PreviewState> grammarToPreviewState =
+	public final Map<String, PreviewState> grammarToPreviewState =
 		Collections.synchronizedMap(new HashMap<>());
-	public ToolWindow previewWindow;	// same for all grammar editor
-	public PreviewPanel previewPanel;	// same for all grammar editor
+	private PreviewPanel previewPanel;	// same for all grammar editor
 
-	public MyVirtualFileAdapter myVirtualFileAdapter = new MyVirtualFileAdapter();
-	public MyFileEditorManagerAdapter myFileEditorManagerAdapter = new MyFileEditorManagerAdapter();
+	/** Tests can substitute the preview tool window; null means look it up. */
+	@TestOnly
+	public ToolWindow previewWindowForTests;
 
 	private ProgressIndicator parsingProgressIndicator;
 
@@ -128,123 +132,54 @@ public class ANTLRv4PluginController implements ProjectComponent {
 			LOG.error("getInstance: project is already disposed");
 			return null;
 		}
-		ANTLRv4PluginController pc = project.getComponent(ANTLRv4PluginController.class);
-		if ( pc==null ) {
-			LOG.error("getInstance: getComponent() for "+project.getName()+" returns null");
-		}
-		return pc;
+		return project.getService(ANTLRv4PluginController.class);
 	}
 
-	@Override
-	public void initComponent() {
-	}
-
-	@Override
+	/** Creates the UI parts and installs listeners. Runs once, on the EDT, when the
+	 *  project opens (or earlier, if a tool window or test asks for the preview panel first).
+	 */
 	public void projectOpened() {
-		IdeaPluginDescriptor plugin = PluginManager.getPlugin(PluginId.getId(PLUGIN_ID));
-		String version = "unknown";
-		if ( plugin!=null ) {
-			version = plugin.getVersion();
-		}
-		LOG.info("ANTLR 4 Plugin version "+version+", Java version "+ SystemInfo.JAVA_VERSION);
-		// make sure the tool windows are created early
-		createToolWindows();
-		installListeners();
-	}
+		ApplicationManager.getApplication().assertIsDispatchThread();
+		if ( opened || projectIsClosed ) return;
+		opened = true;
 
-	public void createToolWindows() {
+		LOG.info("ANTLR 4 Plugin opened for "+project.getName()+", Java version "+ SystemInfo.JAVA_VERSION);
+
 		LOG.info("createToolWindows "+project.getName());
-		ToolWindowManager toolWindowManager = ToolWindowManager.getInstance(project);
-
 		previewPanel = new PreviewPanel(project);
+		console = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
+		Disposer.register(this, console); // not via tool window content, which may never be created
 
-		ContentFactory contentFactory = ContentFactory.getInstance();
+		installListeners();
 
-		toolWindowManager.invokeLater(() -> {
-			Content content = contentFactory.createContent(previewPanel, "", false);
-			content.setCloseable(false);
-
-			previewWindow = toolWindowManager.registerToolWindow(PREVIEW_WINDOW_ID, true, ToolWindowAnchor.BOTTOM);
-			previewWindow.getContentManager().addContent(content);
-			previewWindow.setIcon(Icons.getToolWindow());
-		});
-
-		TextConsoleBuilderFactory factory = TextConsoleBuilderFactory.getInstance();
-		TextConsoleBuilder consoleBuilder = factory.createBuilder(project);
-		this.console = consoleBuilder.getConsole();
-
-		toolWindowManager.invokeLater(() -> {
-			JComponent consoleComponent = console.getComponent();
-			Content content = contentFactory.createContent(consoleComponent, "", false);
-			content.setCloseable(false);
-			content.setDisposer(console);
-
-			consoleWindow = toolWindowManager.registerToolWindow(CONSOLE_WINDOW_ID, true, ToolWindowAnchor.BOTTOM);
-			consoleWindow.getContentManager().addContent(content);
-			consoleWindow.setIcon(Icons.getToolWindow());
-		});
+		// A grammar restored in an editor at startup was selected before the panel existed.
+		VirtualFile current = getCurrentGrammarFile();
+		if ( current!=null ) {
+			currentEditorFileChangedEvent(null, current, false);
+		}
 	}
 
 	@Override
-	public void projectClosed() {
-		LOG.info("projectClosed " + project.getName());
-		//synchronized ( shutdownLock ) { // They should be called from EDT only so no lock
+	public void dispose() {
+		LOG.info("dispose " + project.getName());
 		projectIsClosed = true;
-		uninstallListeners();
-
-		for (PreviewState it : grammarToPreviewState.values()) {
-			previewPanel.inputPanel.releaseEditor(it);
+		if ( previewPanel!=null ) {
+			for (PreviewState it : grammarToPreviewState.values()) {
+				previewPanel.inputPanel.releaseEditor(it);
+			}
 		}
-
-		previewPanel = null;
-		previewWindow = null;
-		consoleWindow = null;
-		project = null;
-
-		// We can't dispose of the preview state map during unit tests
-		if (ApplicationManager.getApplication().isUnitTestMode()) return;
-		grammarToPreviewState = null;
-	}
-
-	// seems that intellij can kill and reload a project w/o user knowing.
-	// a ptr was left around that pointed at a disposed project. led to
-	// problem in switchGrammar. Probably was a listener still attached and trigger
-	// editor listeners released in editorReleased() events.
-	public void uninstallListeners() {
-		VirtualFileManager.getInstance().removeVirtualFileListener(myVirtualFileAdapter);
-
-		if ( !project.isDisposed() ) {
-			MessageBusConnection msgBus = project.getMessageBus().connect(project);
-			msgBus.disconnect();
-		}
-	}
-
-	@Override
-	public void disposeComponent() {
-	}
-
-	@NotNull
-	@Override
-	public String getComponentName() {
-		return "antlr.ProjectComponent";
+		grammarLoader.shutdownNow();
 	}
 
 	// ------------------------------
 
-	public void installListeners() {
+	private void installListeners() {
 		LOG.info("installListeners "+project.getName());
-		// Listen for .g4 file saves
-		VirtualFileManager.getInstance().addVirtualFileListener(myVirtualFileAdapter);
+		// Listen for .g4 file saves; disconnected when this service is disposed
+		ApplicationManager.getApplication().getMessageBus().connect(this)
+			.subscribe(VirtualFileManager.VFS_CHANGES, new GrammarSaveListener());
 
-		// Listen for editor window changes
-		MessageBusConnection msgBus = project.getMessageBus().connect(project);
-		msgBus.subscribe(
-			FileEditorManagerListener.FILE_EDITOR_MANAGER,
-			myFileEditorManagerAdapter
-		);
-
-		EditorFactory factory = EditorFactory.getInstance();
-		factory.addEditorFactoryListener(
+		EditorFactory.getInstance().addEditorFactoryListener(
 			new EditorFactoryListener() {
 				@Override
 				public void editorCreated(@NotNull EditorFactoryEvent event) {
@@ -257,7 +192,7 @@ public class ANTLRv4PluginController implements ProjectComponent {
 					final Document doc = editor.getDocument();
 					VirtualFile vfile = FileDocumentManager.getInstance().getFile(doc);
 					if ( vfile!=null && vfile.getName().endsWith(".g4") ) {
-						GrammarEditorMouseAdapter listener = new GrammarEditorMouseAdapter();
+						GrammarEditorMouseListener listener = new GrammarEditorMouseListener();
 						editor.putUserData(EDITOR_MOUSE_LISTENER_KEY, listener);
 						editor.addEditorMouseListener(listener);
 					}
@@ -269,14 +204,14 @@ public class ANTLRv4PluginController implements ProjectComponent {
 					if (editor.getProject() != null && editor.getProject() != project) {
 						return;
 					}
-					GrammarEditorMouseAdapter listener = editor.getUserData(EDITOR_MOUSE_LISTENER_KEY);
+					GrammarEditorMouseListener listener = editor.getUserData(EDITOR_MOUSE_LISTENER_KEY);
 					if (listener != null) {
 						editor.removeEditorMouseListener(listener);
 						editor.putUserData(EDITOR_MOUSE_LISTENER_KEY, null);
 					}
 				}
 			},
-			project // removed when the project closes
+			this // removed when this service is disposed
 		);
 	}
 
@@ -378,7 +313,8 @@ public class ANTLRv4PluginController implements ProjectComponent {
 	 *  closes or is disposed.
 	 */
 	private void runGrammarLoad(BooleanSupplier load, Runnable thenOnEdt) {
-		final Project loadProject = project; // the field is nulled when the project closes
+		if ( projectIsClosed ) return; // the loader is shut down on dispose
+		final Project loadProject = project;
 		grammarLoader.execute(() -> {
 			if ( projectIsClosed || loadProject.isDisposed() ) return;
 			boolean loaded;
@@ -447,6 +383,7 @@ public class ANTLRv4PluginController implements ProjectComponent {
 		if (previewPanel != null) {
 			previewPanel.setEnabled(false);
 		}
+		ToolWindow previewWindow = getPreviewWindow();
 		if (previewWindow != null) {
 			previewWindow.hide(null);
 		}
@@ -593,26 +530,34 @@ public class ANTLRv4PluginController implements ProjectComponent {
 		previewPanel.startParsing();
 	}
 
+	/** The preview panel; on the EDT, creates the UI parts first if the startup activity
+	 *  hasn't run yet (tool window shown early, or tests). Null off the EDT before that. */
 	public PreviewPanel getPreviewPanel() {
+		if ( !opened && ApplicationManager.getApplication().isDispatchThread() ) {
+			projectOpened();
+		}
 		return previewPanel;
 	}
 
+	/** The Tool Output console; null until {@link #projectOpened()} has run. */
 	public ConsoleView getConsole() {
 		return console;
 	}
 
 	public ToolWindow getConsoleWindow() {
-		return consoleWindow;
+		return ToolWindowManager.getInstance(project).getToolWindow(CONSOLE_WINDOW_ID);
 	}
 
 	public static void showConsoleWindow(final Project project) {
-		ApplicationManager.getApplication().invokeLater(
-				() -> ANTLRv4PluginController.getInstance(project).getConsoleWindow().show(null)
-		);
+		ApplicationManager.getApplication().invokeLater(() -> {
+			ToolWindow window = ANTLRv4PluginController.getInstance(project).getConsoleWindow();
+			if ( window!=null ) window.show(null);
+		}, project.getDisposed());
 	}
 
 	public ToolWindow getPreviewWindow() {
-		return previewWindow;
+		if ( previewWindowForTests!=null ) return previewWindowForTests;
+		return ToolWindowManager.getInstance(project).getToolWindow(PREVIEW_WINDOW_ID);
 	}
 
 	public @NotNull PreviewState getPreviewState(VirtualFile grammarFile) {
@@ -695,9 +640,9 @@ public class ANTLRv4PluginController implements ProjectComponent {
 		return null;
 	}
 
-	private class GrammarEditorMouseAdapter extends EditorMouseAdapter {
+	private class GrammarEditorMouseListener implements EditorMouseListener {
 		@Override
-		public void mouseClicked(EditorMouseEvent e) {
+		public void mouseClicked(@NotNull EditorMouseEvent e) {
 			Document doc = e.getEditor().getDocument();
 			VirtualFile vfile = FileDocumentManager.getInstance().getFile(doc);
 			if ( vfile!=null && vfile.getName().endsWith(".g4") ) {
@@ -706,58 +651,55 @@ public class ANTLRv4PluginController implements ProjectComponent {
 		}
 	}
 
-	private class MyVirtualFileAdapter extends VirtualFileAdapter {
+	private class GrammarSaveListener implements BulkFileListener {
 		@Override
-		public void contentsChanged(VirtualFileEvent event) {
-			final VirtualFile vfile = event.getFile();
-			if ( !vfile.getName().endsWith(".g4") ) return;
-			// VirtualFileManager listeners are application-wide: ignore saves of grammars that
-			// aren't open in this project, or another project's save would repaint our preview.
-			if ( projectIsClosed || !FileEditorManager.getInstance(project).isFileOpen(vfile) ) return;
-			if ( !ApplicationManager.getApplication().isUnitTestMode()) {
+		public void after(@NotNull List<? extends VFileEvent> events) {
+			if ( projectIsClosed || ApplicationManager.getApplication().isUnitTestMode() ) return;
+			for (VFileEvent event : events) {
+				if ( !(event instanceof VFileContentChangeEvent) ) continue;
+				final VirtualFile vfile = ((VFileContentChangeEvent) event).getFile();
+				if ( !vfile.getName().endsWith(".g4") ) continue;
+				// VFS events are application-wide: ignore saves of grammars that aren't open in
+				// this project, or another project's save would repaint our preview.
+				if ( !FileEditorManager.getInstance(project).isFileOpen(vfile) ) continue;
 				grammarFileSavedEvent(vfile);
 			}
 		}
 	}
 
-	public class MyFileEditorManagerAdapter implements FileEditorManagerListener {
-		@Override
-		public void selectionChanged(FileEditorManagerEvent event) {
-			if ( !projectIsClosed ) {
-				boolean modified = false;
+	/** Editor tab selection changed in this project; called by {@link GrammarEditorTabListener}. */
+	public void editorSelectionChanged(@NotNull FileEditorManagerEvent event) {
+		if ( projectIsClosed ) return;
+		boolean modified = false;
 
-				if (event.getOldEditor() != null) {
-					if (event.getOldEditor().isModified()) {
-						modified = true;
-					} else {
-						VirtualFile oldFile = event.getOldEditor().getFile();
-						String oldFilePath = oldFile.getPath();
-						Long modCount = oldFile.getModificationCount();
-						modified = grammarFileMods.containsKey(oldFilePath) &&
-								!grammarFileMods.get(oldFilePath).equals(modCount);
-					}
-
-				}
-
-				if (modified) {
-					PsiDocumentManager psiMgr = PsiDocumentManager.getInstance(project);
-					FileDocumentManager docMgr = FileDocumentManager.getInstance();
-					Document doc = docMgr.getDocument(event.getOldFile());
-					if ( !psiMgr.isCommitted(doc) || docMgr.isDocumentUnsaved(doc) ) {
-						psiMgr.commitDocument(doc);
-						docMgr.saveDocument(doc);
-					}
-				}
-				currentEditorFileChangedEvent(event.getOldFile(), event.getNewFile(), modified);
+		if (event.getOldEditor() != null) {
+			if (event.getOldEditor().isModified()) {
+				modified = true;
+			} else {
+				VirtualFile oldFile = event.getOldEditor().getFile();
+				String oldFilePath = oldFile.getPath();
+				Long modCount = oldFile.getModificationCount();
+				modified = grammarFileMods.containsKey(oldFilePath) &&
+						!grammarFileMods.get(oldFilePath).equals(modCount);
 			}
 		}
 
-		@Override
-		public void fileClosed(FileEditorManager source, VirtualFile file) {
-			if ( !projectIsClosed && (source != null && source.getSelectedEditor() != null && source.getSelectedEditor().getFile().equals(file)) ) {
-				editorFileClosedEvent(file);
+		if (modified) {
+			PsiDocumentManager psiMgr = PsiDocumentManager.getInstance(project);
+			FileDocumentManager docMgr = FileDocumentManager.getInstance();
+			Document doc = docMgr.getDocument(event.getOldFile());
+			if ( !psiMgr.isCommitted(doc) || docMgr.isDocumentUnsaved(doc) ) {
+				psiMgr.commitDocument(doc);
+				docMgr.saveDocument(doc);
 			}
 		}
+		currentEditorFileChangedEvent(event.getOldFile(), event.getNewFile(), modified);
 	}
 
+	/** An editor tab closed in this project; called by {@link GrammarEditorTabListener}. */
+	public void editorFileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
+		if ( !projectIsClosed && source.getSelectedEditor() != null && source.getSelectedEditor().getFile().equals(file) ) {
+			editorFileClosedEvent(file);
+		}
+	}
 }

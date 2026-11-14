@@ -23,16 +23,16 @@ public class Issue559Test extends BasePlatformTestCase {
         // Setup
         ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
         PreviewPanel panel = controller.getPreviewPanel();
-        ToolWindow previewWindow = controller.previewWindow = new MockToolWindow();
+        ToolWindow previewWindow = controller.previewWindowForTests = new MockToolWindow();
         FileEditorManager source = FileEditorManager.getInstance(project);
 
         // Close file 1
-        controller.myFileEditorManagerAdapter.fileClosed(source, vFiles[0]);
+        controller.editorFileClosed(source, vFiles[0]);
         Assert.assertTrue(previewWindow.isVisible());
         Assert.assertTrue(panel.isEnabled());
 
         // Close file 2
-        controller.myFileEditorManagerAdapter.fileClosed(source, vFiles[1]);
+        controller.editorFileClosed(source, vFiles[1]);
         Assert.assertFalse(previewWindow.isVisible());
         Assert.assertFalse(panel.isEnabled());
 

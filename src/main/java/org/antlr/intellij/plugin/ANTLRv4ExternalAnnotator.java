@@ -9,6 +9,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiFile;
 import org.antlr.intellij.plugin.actions.AnnotationIntentActionsFactory;
+import org.antlr.intellij.plugin.preview.PreviewPanel;
 import org.antlr.intellij.plugin.validation.GrammarIssue;
 import org.antlr.intellij.plugin.validation.GrammarIssuesCollector;
 import org.antlr.runtime.ANTLRFileStream;
@@ -57,7 +58,8 @@ public class ANTLRv4ExternalAnnotator extends ExternalAnnotator<GrammarIssuesCol
 
 		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(file.getProject());
 		if ( controller!=null && !ApplicationManager.getApplication().isUnitTestMode() ) {
-			controller.getPreviewPanel().autoRefreshPreview(file.getVirtualFile());
+			PreviewPanel previewPanel = controller.getPreviewPanel();
+			if ( previewPanel!=null ) previewPanel.autoRefreshPreview(file.getVirtualFile());
 		}
 	}
 

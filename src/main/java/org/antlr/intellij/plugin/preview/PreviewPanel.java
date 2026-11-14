@@ -100,7 +100,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		// If someone is typing, keep resetting timer so parsing doesn't start
 		updateQueue.setRestartTimerOnAdd(true);
 		// Disposing the queue drops queued reparses, so none run after the project closes.
-		Disposer.register(project, updateQueue);
+		Disposer.register(ANTLRv4PluginController.getInstance(project), updateQueue);
 	}
 
 	private void createGUI() {
@@ -218,7 +218,9 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 				autoBuildHier
 		);
 
-		return ActionManager.getInstance().createActionToolbar(PREVIEW_WINDOW_ID, actionGroup, false);
+		ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar(PREVIEW_WINDOW_ID, actionGroup, false);
+		toolbar.setTargetComponent(this); // actions update against the preview panel, not whatever has focus
+		return toolbar;
 	}
 
 	private InputPanel getEditorPanel() {

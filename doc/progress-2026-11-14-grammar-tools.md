@@ -57,10 +57,10 @@
   wide and had no project filter, so saving a grammar in one project repainted another
   project's preview. Both now ignore other projects' editors/files.
 - Preview input document listener is scoped to its editor (`PreviewState.INPUT_LISTENER_SCOPE`,
-  disposed on release, project as backstop). For file input it sat on the IDE-wide Document and
+  disposed on release, controller as backstop). For file input it sat on the IDE-wide Document and
   piled up on each grammar switch, reparsing with stale grammars and outliving the project.
 - After project close: parse completion and slow-parse callbacks check `projectIsClosed`; the
-  reparse `MergingUpdateQueue` is disposed with the project.
+  reparse `MergingUpdateQueue` is disposed with the controller.
 - Formatter: any runtime exception from `xl.Formatter` is logged and reported via `onError`
   instead of leaving the request hanging.
 
@@ -105,28 +105,40 @@
     can't resolve. `build.gradle` compiles against `bundledModule("intellij.platform.structureView")`
     but `plugin.xml` only depends on `com.intellij.modules.lang`. Check the Structure view on a
     `.g4` file in the sandbox; if it fails, declare the module dependency in `plugin.xml`.
-13. **Internal API**: `PluginManager.getPlugin()` in `ANTLRv4PluginController.projectOpened()`
-    (Marketplace may reject internal API use). Use `PluginManagerCore.getPlugin` or drop the log line.
-14. **51 deprecated API uses**, mostly from 15 below (project component, `VirtualFileAdapter`,
-    `EditorMouseAdapter`, `registerToolWindow`, `ServiceManager`); `getComponent(Class)` is
-    scheduled for removal. Also `FileTypeFactory`, `DefaultLiveTemplatesProvider`,
-    `ReadAction.run/compute`, `IconLoader.getIcon(String)`, `Document.addDocumentListener`
-    without a disposable.
+13. ~~**Internal API**: `PluginManager.getPlugin()` in `projectOpened()`.~~ Done (15): the
+    version lookup is gone; every public way to get our own descriptor is internal API too.
+14. **Deprecated API uses: 51 → 37** after 15. Left: `FileTypeFactory` (also the last thing
+    blocking dynamic load/unload), `DefaultLiveTemplatesProvider`, `ReadAction.run/compute`,
+    `IconLoader.getIcon(String)`, `Document.addDocumentListener` without a disposable (manual
+    input doc), `CaretAdapter`, `ServiceManager`, popup builder and `FileSaverDescriptor` APIs.
+    The full list is in `build/reports/pluginVerifier/.../deprecated-usages.txt`.
 
 ### Project lifecycle / state
-15. **Convert `ANTLRv4PluginController` from a `ProjectComponent` to a project service that
-    implements `Disposable`** (prior art: every current platform plugin; components are
-    deprecated). Register all listeners, queues, preview editors and the grammar-load executor
-    against it, tool windows via `toolWindow` extension + `ToolWindowFactory`. This removes the
-    manual install/uninstall and the null-out-on-close pattern behind the bleed bugs fixed in
-    section 4, clears most of 14, and makes the plugin dynamic (no IDE restart to enable or
-    disable).
-16. `uninstallListeners()`: `project.getMessageBus().connect(project).disconnect()` opens a new
-    connection and closes it, so it disconnects nothing. Harmless (the real connection is parented
-    to the project); delete it.
+15. ~~Convert `ANTLRv4PluginController` from a `ProjectComponent` to a project service.~~ Done
+    (prior art: the platform's "migrating components to services" guide):
+    - `@Service(PROJECT)`, `implements Disposable`; `dispose()` replaces `projectClosed()`,
+      sets `projectIsClosed`, releases preview editors, shuts down the grammar loader.
+    - Listeners registered against the service: VFS saves via `VFS_CHANGES` (`BulkFileListener`),
+      the editor-factory listener, the console. No manual uninstall.
+    - Editor tab events: `GrammarEditorTabListener` under `<projectListeners>` in plugin.xml,
+      forwarding to `editorSelectionChanged` / `editorFileClosed`.
+    - Tool windows declared in plugin.xml, filled by `ANTLRv4ToolWindowFactory`; looked up via
+      `ToolWindowManager` (tests can set `previewWindowForTests`).
+    - UI parts (preview panel, console) and listeners are created on the EDT by
+      `projectOpened()`, run from `ANTLRv4StartupActivity` (`ProjectActivity`), or earlier by
+      `getPreviewPanel()` on the EDT. After creating the panel it replays the selected grammar,
+      since its tab may have been selected before the panel existed.
+    - Checked by hand in the sandbox (log reviewed): three projects open at once, each with
+      its own controller; startup grammar replay; switching grammars and non-grammar files;
+      start rule; saves reload only their own project; closing projects disposes each
+      controller with nothing running afterwards; no errors or freezes.
+    - The preview reparse queue and input listener scopes use the controller (not the project)
+      as parent disposable; the preview toolbar has an explicit target component.
+16. ~~`uninstallListeners()` disconnected nothing.~~ Gone with 15.
 17. Fixture tests suppress `ObjectNotDisposedException` for the Tool Output console editor
-    (`AntlrFixtureTestCase`, `TestUtils`). That's a real leak; release it on project close (15
-    will do it) and drop the suppression.
+    (`AntlrFixtureTestCase`, `TestUtils`). The console is now disposed with the controller
+    (15), but the light test project lives for the whole run, so check whether the suppression
+    is still needed before dropping it.
 18. Small: `RefactorUtils.lexerRuleNameID` is a static counter shared by all projects and never
     reset (`T__N` numbering); `ParsingUtils.BAD_*_GRAMMAR` statics could be `final`.
 
@@ -159,3 +171,11 @@
     Done: both deleted, never committed.
 30. Extract Rule's `update()` can't cheaply check the selection's shape (needs a parse), so the
     action stays enabled and rejects on invoke with a hint. Revisit if 23 adds a cached parse.
+31. Every project reloads its open grammar once, a few seconds after opening, through the save
+    path (`grammarFileSavedEvent`) though nothing was saved: a VFS content-change event for the
+    file arrives after startup. Happens in every session in the sandbox log, before and after
+    15. Costs one redundant grammar load (up to ~4.5 s on `refactorme.g4`). Find the source of
+    the event, or skip reloads when the file's text matches what was last loaded.
+32. Platform warning "use project as a parent disposable" (no stack trace) appeared about once
+    per project open, before and after 15. Our last two project-parented disposables were then
+    moved to the controller; check the next sandbox log to see whether the warning is gone.

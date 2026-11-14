@@ -54,7 +54,7 @@ public class TestUtils {
 	}
 
 	private static boolean stackMatchesOurEditorCreation(String stack) {
-		return stack.contains("ANTLRv4PluginController.createToolWindows")
+		return stack.contains("ANTLRv4PluginController.projectOpened")
 			|| stack.contains("Issue559Test")
 			|| stack.contains("Issue540Test")
 			|| stack.contains("org.antlr.intellij.plugin.preview.InputPanel.createPreviewEditor");
