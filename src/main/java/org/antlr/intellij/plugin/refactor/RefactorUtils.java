@@ -11,11 +11,11 @@ import org.antlr.v4.runtime.TokenStream;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.antlr.v4.runtime.tree.Tree;
-import org.antlr.v4.runtime.tree.Trees;
 import org.antlr.v4.runtime.tree.xpath.XPath;
 import org.antlr.v4.tool.Grammar;
 import org.stringtemplate.v4.misc.Misc;
 
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -75,19 +75,27 @@ public class RefactorUtils {
 		put("'\\'", "BACKSLASH");
 	}};
 
-	public static int lexerRuleNameID = 1;
-
-	public static String getLexerRuleNameFromLiteral(String literal) {
+	/**
+	 * A lexer rule name for {@code literal}: a conventional name for punctuation ({@code ';'}
+	 * gives {@code SEMI}), the upper-cased word for keywords, else the first free {@code T__N}.
+	 * Names in {@code taken} are avoided, and the result is added to it, so one call per literal
+	 * gives distinct names.
+	 */
+	public static String getLexerRuleNameFromLiteral(String literal, Set<String> taken) {
 		String name = literalToRuleNameMap.get(literal);
-		if ( name!=null ) {
-			return name;
+		if ( name==null ) {
+			String strippedLiteral = Misc.strip(literal, 1);
+			if ( !strippedLiteral.isEmpty() && Character.isLetter(strippedLiteral.charAt(0)) ) { // a keyword like true or begin
+				name = strippedLiteral.toUpperCase();
+			}
 		}
-		// is it a keyword like true or begin?
-		String strippedLiteral = Misc.strip(literal, 1);
-		if ( Character.isLetter(strippedLiteral.charAt(0)) ) {
-			return strippedLiteral.toUpperCase();
+		if ( name==null || taken.contains(name) ) {
+			int n = 1;
+			while ( taken.contains("T__"+n) ) n++;
+			name = "T__"+n;
 		}
-		return "T__"+lexerRuleNameID++;
+		taken.add(name);
+		return name;
 	}
 
 	public static TerminalNode getRuleDefNameNode(Parser parser, ParseTree tree, String ruleName) {
@@ -205,15 +213,4 @@ public class RefactorUtils {
 		return nodes;
 	}
 
-	/** Given a token index into buffer, find surrounding rule then return
-	 *  char position of start of next rule.
-	 */
-	public static int getCharIndexOfNextRuleStart(ParserRuleContext tree, int tokenIndex) {
-		final ParserRuleContext selNode =
-			Trees.getRootOfSubtreeEnclosingRegion(tree, tokenIndex, tokenIndex);
-		final ParserRuleContext ruleRoot = (ParserRuleContext)
-			getAncestorWithType(selNode, ANTLRv4Parser.RuleSpecContext.class);
-
-		return ruleRoot.getStop().getStopIndex() + 2; // insert after '\n' following ';'
-	}
 }

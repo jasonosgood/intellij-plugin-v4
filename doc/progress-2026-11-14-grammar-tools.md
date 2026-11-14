@@ -51,7 +51,7 @@
   `TemplateWordInPluginId`: the published ID `org.antlr.intellij.plugin` can't change.
 - Extract Rule only accepts whole elements or whole alternatives of one rule
   (`ExtractRuleOccurrences.isUnitRun`, the same model the duplicate search uses); anything else
-  shows an error hint. Fixes selections spanning two rules (overlapping edits corrupted the
+  shows an error dialog. Fixes selections spanning two rules (overlapping edits corrupted the
   grammar) and selections of a rule name, `:`, `;`, a dangling `|`, or part of an alternative.
 - Cross-project bleed: the editor-created listener and the VFS save listener are application-
   wide and had no project filter, so saving a grammar in one project repainted another
@@ -65,7 +65,7 @@
   instead of leaving the request hanging.
 
 ## Notes
-- Full suite: `./gradlew check buildPlugin` → 96 tests, 0 failures (after the section 4 fixes).
+- Full suite: `./gradlew test` → 105 tests, 0 failures (after items 12–31).
 - Sandbox: `launch-sandbox.sh` (see the user's Claude memory). Demo grammar used for Extract Rule
   lived in the session scratchpad; recreate from the test cases if needed.
 - `gradle.properties`: the local `org.gradle.java.home` line was removed; `JAVA_HOME` already
@@ -102,18 +102,28 @@
 11. Release: change notes in `plugin.xml`, version bump.
 
 ### From the Plugin Verifier (2026.2.1)
-12. **Compatibility problem**: `structview/ANTLRv4StructureViewFactory.DummyViewTreeElement`
-    uses `com.intellij.ide.structureView.impl.common.PsiTreeElementBase`, which the verifier
-    can't resolve. `build.gradle` compiles against `bundledModule("intellij.platform.structureView")`
-    but `plugin.xml` only depends on `com.intellij.modules.lang`. Check the Structure view on a
-    `.g4` file in the sandbox; if it fails, declare the module dependency in `plugin.xml`.
+Verifier now: **Compatible**; "can probably be enabled or disabled without IDE restart";
+4 deprecated uses, all ANTLR-generated `getTokenNames()` overrides (ours and xl's); 2
+experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
+12. ~~Compatibility problem: `PsiTreeElementBase` in `DummyViewTreeElement`.~~ Done: the dummy
+    element implements `StructureViewTreeElement` + `ItemPresentation` directly, and the
+    `bundledModule("intellij.platform.structureView")` dependency is gone from `build.gradle`.
 13. ~~**Internal API**: `PluginManager.getPlugin()` in `projectOpened()`.~~ Done (15): the
     version lookup is gone; every public way to get our own descriptor is internal API too.
-14. **Deprecated API uses: 51 → 37** after 15. Left: `FileTypeFactory` (also the last thing
-    blocking dynamic load/unload), `DefaultLiveTemplatesProvider`, `ReadAction.run/compute`,
-    `IconLoader.getIcon(String)`, `Document.addDocumentListener` without a disposable (manual
-    input doc), `CaretAdapter`, `ServiceManager`, popup builder and `FileSaverDescriptor` APIs.
-    The full list is in `build/reports/pluginVerifier/.../deprecated-usages.txt`.
+14. ~~Deprecated API uses: 51 → 37.~~ Done, 37 → 4:
+    - `FileTypeFactory` → `<fileType>` in plugin.xml (this unblocked dynamic loading).
+    - Live templates: modernized, then removed entirely (35).
+    - `ReadAction.run/compute` → `runBlocking/computeBlocking`; `ServiceManager` →
+      `project.getService`; `IconLoader.getIcon(path, Icons.class)`; `ImageUtil.createImage`;
+      `updateActionsAsync`; `CaretListener`/`DocumentListener` for the adapters; the manual
+      input document listener now has the editor's listener scope as parent disposable; popups
+      via `createPopupChooserBuilder(List)`; `FileSaverDescriptor` with `withExtensionFilter`;
+      `OccurrencesChooser.showChooser(Map, Consumer)`; `java.util.function.Predicate` in
+      `Utils.filter`; dropped the `spaceExistanceTypeBetweenTokens` override (it returned the
+      default).
+    - `ProjectFileIndex.getPackageNameByDirectory`: its replacement (`PackageIndex`) is in the
+      Java plugin, which we don't require, so `RunANTLROnGrammarFile.packageNameOf` computes it
+      from the source root and its package prefix.
 
 ### Project lifecycle / state
 15. ~~Convert `ANTLRv4PluginController` from a `ProjectComponent` to a project service.~~ Done
@@ -137,47 +147,57 @@
     - The preview reparse queue and input listener scopes use the controller (not the project)
       as parent disposable; the preview toolbar has an explicit target component.
 16. ~~`uninstallListeners()` disconnected nothing.~~ Gone with 15.
-17. Fixture tests suppress `ObjectNotDisposedException` for the Tool Output console editor
-    (`AntlrFixtureTestCase`, `TestUtils`). The console is now disposed with the controller
-    (15), but the light test project lives for the whole run, so check whether the suppression
-    is still needed before dropping it.
-18. Small: `RefactorUtils.lexerRuleNameID` is a static counter shared by all projects and never
-    reset (`T__N` numbering); `ParsingUtils.BAD_*_GRAMMAR` statics could be `final`.
+17. Fixture tests suppress `ObjectNotDisposedException` for the plugin's editors. **Still
+    needed** (checked: 28 tests fail without it): the light test project lives for the whole
+    run, so the controller's console and preview editors outlive each test, and the platform
+    checks after every test that all editors were released.
+18. ~~Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`.~~ Done: Generate Lexer
+    Rules names `T__N` from the first number not already used in the grammar (and names each
+    literal once); the `BAD_*` markers are `final`.
 
-### From code review (not fixed yet)
-19. Extract Rule: "replace all" also replaces alternatives of a left-recursive rule, creating
-    mutual left recursion ANTLR rejects (`e : e '*' e | ...` with `e '*' e` elsewhere). Exclude
-    occurrences that start with a reference to their own rule.
-20. Extract Rule: labels inside the selection move into the new rule and break `$x` references
-    in actions; selecting a labelled alternative without its `# label` leaves the rule with a
-    mix of labelled and unlabelled alternatives. (Selection checks now block the partial cases,
-    `x=A`; whole labelled elements still move.)
-21. Extract Rule name dialog accepts ANTLR and target keywords (`grammar`, `fragment`, `class`).
-    Reuse the suggester's reserved set; use `javax.lang.model.SourceVersion.isKeyword` instead of
-    the hand-written Java keyword list.
-22. Extract Rule passes no `PsiFile` to `runWriteCommandAction`, so read-only files throw instead
-    of offering to make them writable (Sort does pass it).
-23. Sort and Extract parse the whole grammar on the EDT (same kind of freeze as commit `50f99b2`).
-    Use `ReadAction.nonBlocking` or modal progress; apply on the EDT.
-24. Sort replaces the whole document, losing caret, folding and scroll; apply as a diff.
-25. Format: with no range feature, Reformat on a selection and reformat-on-save "changed lines
-    only" (the platform default) silently do nothing on `.g4`. Format the whole file or notify.
-26. `plugin.xml` Sort description and `SortRulesAction` javadoc say lexer rules stay in place;
-    `xl.SortRules` moves them after all parser rules (relative order kept).
-27. `build.gradle` xl source set includes both `grammar/ANTLR4.g4` and `src/xl/ANTLR4.g4`; with
-    `-Xexact-output-dir` both generate into one folder and the last one wins. Include exactly one.
-28. Cleanup: `ExtractRuleOccurrences.matchRuns` is quadratic per alternative list;
-    `deepestEnclosing` duplicates `Trees.getRootOfSubtreeEnclosingRegion` (and `ExtractRulePlan`
-    walks the tree twice for the same token); `RefactorUtils.getCharIndexOfNextRuleStart` is dead.
+### From code review
+19. ~~Extract Rule "replace all" creates mutual left recursion.~~ Done: a selection or occurrence
+    at the left edge of an alternative of rule `e` that starts with `e` is refused (the
+    selection with a reason, occurrences are skipped). `e : '(' «e '*' e» ')'` is still allowed.
+20. ~~Extract Rule breaks labels and `$x` references.~~ Done (`ExtractRuleOccurrences.problem`):
+    refused when an action outside the run uses a label or element only inside it, when an
+    action inside it uses anything not defined in it (including `$text`, arguments), or when it
+    holds some but not all of a rule's `# label`ed alternatives. Label and action moving
+    together (`«y=A {$y.text}»`) is fine.
+21. ~~Name dialog accepts keywords.~~ Done: `ExtractRuleNameSuggester.isReserved` (ANTLR words +
+    `SourceVersion.isKeyword`) is shared by the suggester and the dialog.
+22. ~~Extract Rule passes no `PsiFile` to `runWriteCommandAction`.~~ Done.
+23. ~~Sort and Extract parse on the EDT.~~ Done: both plan in `ReadAction.nonBlocking` and finish
+    on the EDT. Extract re-checks the document's modification stamp before applying, since the
+    user can edit while the occurrence popup or name dialog is open.
+24. ~~Sort replaces the whole document.~~ Done: `format/TextDiffs.apply` applies the result as a
+    line diff (`ComparisonManager`), like the platform does for async formatters; the caret on
+    an unmoved line stays put (test).
+25. ~~Format on a range does nothing.~~ Done: the service declares `FORMAT_FRAGMENTS`, formats
+    the whole grammar and keeps only the changes on the requested lines
+    (`TextDiffs.keepChangesIn`; prior art: google-java-format's range formatting).
+26. ~~Sort description says lexer rules stay in place.~~ Done: plugin.xml and the javadoc say
+    lexer rules move after the parser rules in their original order (checked with xl).
+27. ~~xl source set includes both `ANTLR4.g4` paths.~~ Done: `build.gradle` includes whichever
+    exists, preferring `src/xl/` (the owner's rename in the standalone antlr4-xl repo); built
+    against both the submodule and the standalone checkout.
+28. ~~Cleanup.~~ Done: `matchRuns` extends each run incrementally; `deepestEnclosing` replaced by
+    `Trees.getRootOfSubtreeEnclosingRegion` (`ExtractRuleOccurrences.enclosingRule`, also used
+    by `ExtractRulePlan`, so one walk); dead `getCharIndexOfNextRuleStart` deleted.
 29. ~~`doc/error2.txt` (stale IDE log) is staged; `doc/error.txt` is untracked. Unstage/delete.~~
     Done: both deleted, never committed.
-30. Extract Rule's `update()` can't cheaply check the selection's shape (needs a parse), so the
-    action stays enabled and rejects on invoke with a hint. Revisit if 23 adds a cached parse.
-31. Every project reloads its open grammar once, a few seconds after opening, through the save
-    path (`grammarFileSavedEvent`) though nothing was saved: a VFS content-change event for the
-    file arrives after startup. Happens in every session in the sandbox log, before and after
-    15. Costs one redundant grammar load (up to ~4.5 s on `refactorme.g4`). Find the source of
-    the event, or skip reloads when the file's text matches what was last loaded.
+30. Extract Rule's `update()` doesn't check the selection's shape. Keeping it that way: it matches
+    the platform (Extract Method stays enabled and explains a bad selection), and the rejection
+    dialog now names the specific reason (19, 20).
+31. ~~Redundant grammar reload after each project opens.~~ Fixed, not verified in the sandbox:
+    the save path skips the reload when the grammar's text equals the text it was last loaded
+    from (`loadedGrammarText`). The event's source is still unknown.
+34. ~~Profiler: clicking a decision row threw "Read access is allowed from inside read-action
+    only".~~ Fixed: 2026.2 no longer gives plain Swing listeners an implicit lock, so the profiler
+    row click, the parse-tree hierarchy selection and the input radio buttons run their editor
+    work in `WriteIntentReadAction.run` (the fix the platform's error message names).
+35. ~~Live templates.~~ Removed (none showed up in the sandbox, and the owner doesn't use them):
+    the `templates/` package, `liveTemplates/lexer/user.xml` and their plugin.xml entries.
 32. Platform warning "use project as a parent disposable" (no stack trace) appears about once
     per project open. Still there after our last project-parented disposables moved to the
     controller, so it comes from the platform, not this plugin. Ignore.

@@ -19,6 +19,7 @@ import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.psi.MyPsiUtils;
+import org.antlr.intellij.plugin.refactor.ExtractRuleNameSuggester;
 import org.antlr.intellij.plugin.refactor.RefactorUtils;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.Parser;
@@ -34,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 
 public class GenerateLexerRulesForLiteralsAction extends AnAction {
 	public static final Logger LOG = Logger.getInstance("GenerateLexerRulesForLiterals");
@@ -77,10 +79,12 @@ public class GenerateLexerRulesForLiteralsAction extends AnAction {
 		final ParseTree tree = results.tree;
 		Collection<ParseTree> literalNodes = XPath.findAll(tree, "//ruleBlock//STRING_LITERAL", parser);
 		LinkedHashMap<String, String> lexerRules = new LinkedHashMap<>();
+		Set<String> taken = ExtractRuleNameSuggester.existingNames(tree);
 		for (ParseTree node : literalNodes) {
 			String literal = node.getText();
+			if ( lexerRules.containsKey(literal) ) continue;
 			String ruleText = String.format("%s : %s ;",
-											RefactorUtils.getLexerRuleNameFromLiteral(literal), literal);
+											RefactorUtils.getLexerRuleNameFromLiteral(literal, taken), literal);
 			lexerRules.put(literal, ruleText);
 		}
 

@@ -14,7 +14,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.intellij.ui.JBColor;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.ImageUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.jfree.svg.SVGGraphics2D;
 
@@ -49,7 +49,9 @@ class ParseTreeContextualMenu {
 
         item.addActionListener(event -> {
             String[] extensions = useTransparentBackground ? new String[]{"png", "svg"} : new String[]{"png", "jpg", "svg"};
-            FileSaverDescriptor descriptor = new FileSaverDescriptor("Export Image to", "Choose the destination file", extensions);
+            FileSaverDescriptor descriptor = new FileSaverDescriptor(
+                new FileSaverDescriptor("Export Image to", "Choose the destination file")
+                    .withExtensionFilter("Images", extensions));
             FileSaverDialog dialog = FileChooserFactory.getInstance().createSaveFileDialog(descriptor, (Project) null);
 
             String fileName = "parseTree" + (isMacNativSaveDialog ? ".png" : "");
@@ -78,7 +80,7 @@ class ParseTreeContextualMenu {
 
     private static void exportToImage(UberTreeViewer parseTreeViewer, File file, boolean useTransparentBackground, String imageFormat) {
         int imageType = useTransparentBackground ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
-        BufferedImage bi = UIUtil.createImage(parseTreeViewer.getWidth(), parseTreeViewer.getHeight(), imageType);
+        BufferedImage bi = ImageUtil.createImage(parseTreeViewer.getWidth(), parseTreeViewer.getHeight(), imageType);
         Graphics graphics = bi.getGraphics();
 
         if (!useTransparentBackground) {

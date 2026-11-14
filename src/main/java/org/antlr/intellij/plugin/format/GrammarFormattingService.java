@@ -4,13 +4,15 @@ import com.intellij.formatting.service.AsyncDocumentFormattingService;
 import com.intellij.formatting.service.AsyncFormattingRequest;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiFile;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.ANTLRv4Language;
 import org.jetbrains.annotations.NotNull;
 import xl.Formatter;
 
-import java.util.Collections;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -32,7 +34,10 @@ public class GrammarFormattingService extends AsyncDocumentFormattingService {
 
 	@Override
 	public @NotNull Set<Feature> getFeatures() {
-		return Collections.emptySet(); // whole file only; the formatter has no range mode
+		// The formatter has no range mode: a range request formats the whole grammar and keeps
+		// the changes on the requested lines (TextDiffs.keepChangesIn). Without this feature,
+		// Reformat on a selection and reformat-on-save's "changed lines only" did nothing.
+		return EnumSet.of(Feature.FORMAT_FRAGMENTS);
 	}
 
 	@Override
@@ -53,7 +58,11 @@ public class GrammarFormattingService extends AsyncDocumentFormattingService {
 			@Override
 			public void run() {
 				try {
-					request.onTextReady(Formatter.format(text, width));
+					String formatted = Formatter.format(text, width);
+					List<TextRange> ranges = request.getFormattingRanges();
+					boolean wholeFile = ranges.size()==1 && ranges.get(0).getStartOffset()==0
+						&& ranges.get(0).getEndOffset()>=text.length();
+					request.onTextReady(wholeFile ? formatted : TextDiffs.keepChangesIn(text, formatted, ranges));
 				}
 				catch (ProcessCanceledException e) {
 					throw e;

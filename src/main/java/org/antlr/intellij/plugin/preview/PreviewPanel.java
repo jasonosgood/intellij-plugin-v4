@@ -7,7 +7,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.SelectionModel;
-import com.intellij.openapi.editor.event.CaretAdapter;
+import com.intellij.openapi.editor.event.CaretListener;
 import com.intellij.openapi.editor.event.CaretEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
@@ -109,7 +109,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		// Had to set min size / preferred size in InputPanel.form to get slider to allow left shift of divider
 		Splitter splitPane = new Splitter();
 		inputPanel = getEditorPanel();
-		inputPanel.addCaretListener(new CaretAdapter() {
+		inputPanel.addCaretListener(new CaretListener() {
 			@Override
 			public void caretPositionChanged(@NotNull CaretEvent event) {
 				Caret caret = event.getCaret();
@@ -522,7 +522,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	public void onParsingCompleted(PreviewState previewState, long duration) {
 		ApplicationManager.getApplication().invokeLater(() -> { // make sure we're on GUI thread for this block
 			cancelParserAction.setEnabled(false);
-			buttonBar.updateActionsImmediately();
+			buttonBar.updateActionsAsync();
 
 			if (previewState.parsingResult != null) {
 				updateTreeViewer(previewState, previewState.parsingResult);
@@ -540,18 +540,18 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 	public void notifySlowParsing() {
 		cancelParserAction.setEnabled(true);
-		buttonBar.updateActionsImmediately();
+		buttonBar.updateActionsAsync();
 	}
 
 	public void onParsingCancelled() {
 		cancelParserAction.setEnabled(false);
-		buttonBar.updateActionsImmediately();
+		buttonBar.updateActionsAsync();
 		showError("Parsing was aborted");
 	}
 
 	public void startParsing() {
 		cancelParserAction.setEnabled(false);
-		buttonBar.updateActionsImmediately();
+		buttonBar.updateActionsAsync();
 	}
 
 	@Override

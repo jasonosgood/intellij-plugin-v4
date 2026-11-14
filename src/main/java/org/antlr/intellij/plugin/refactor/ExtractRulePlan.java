@@ -1,15 +1,12 @@
 package org.antlr.intellij.plugin.refactor;
 
 import com.intellij.openapi.util.TextRange;
-import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStream;
 import org.antlr.v4.runtime.misc.Interval;
-import org.antlr.v4.runtime.tree.Tree;
-import org.antlr.v4.runtime.tree.Trees;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -60,30 +57,54 @@ public final class ExtractRulePlan {
 		this.ruleStopOffset = ruleStopOffset;
 	}
 
-	/**
-	 * @return the plan, or null if the selection holds no grammar tokens or is not whole elements
-	 * or whole alternatives of one rule body (see {@link ExtractRuleOccurrences#isUnitRun})
-	 */
+	/** Why a selection can't be extracted; the message is shown to the user. */
+	public static final class Rejected extends Exception {
+		Rejected(String message) {
+			super(message);
+		}
+	}
+
+	static final String NOT_A_UNIT_RUN =
+		"Select whole elements or whole alternatives within one rule, for example\n" +
+		"\"expr ',' expr\" or \"A | B\", not part of an element or a rule's name or ';'.";
+
+	/** Like {@link #plan}, but null instead of a reason when the selection can't be extracted. */
 	@Nullable
 	public static ExtractRulePlan create(String grammarText, int selStart, int selEndExclusive) {
-		if ( selEndExclusive<=selStart ) return null;
+		try {
+			return plan(grammarText, selStart, selEndExclusive);
+		}
+		catch (Rejected r) {
+			return null;
+		}
+	}
+
+	/**
+	 * @throws Rejected if the selection holds no grammar tokens, is not whole elements or whole
+	 *                  alternatives of one rule body (see {@link ExtractRuleOccurrences#isUnitRun}),
+	 *                  or can't be moved to a new rule (see {@link ExtractRuleOccurrences#problem})
+	 */
+	@NotNull
+	public static ExtractRulePlan plan(String grammarText, int selStart, int selEndExclusive) throws Rejected {
+		if ( selEndExclusive<=selStart ) throw new Rejected(NOT_A_UNIT_RUN);
 		ParsingResult parsed = ParsingUtils.parseANTLRGrammar(grammarText);
 		ParserRuleContext tree = (ParserRuleContext) parsed.tree;
 		TokenStream tokens = parsed.parser.getTokenStream();
 
 		Token first = RefactorUtils.getTokenForCharIndex(tokens, selStart);
 		Token last = RefactorUtils.getTokenForCharIndex(tokens, selEndExclusive - 1);
-		if ( first==null || last==null ) return null;
+		if ( first==null || last==null ) throw new Rejected(NOT_A_UNIT_RUN);
 		int start = first.getTokenIndex();
 		int stop = last.getTokenIndex();
 		while ( start<=stop && tokens.get(start).getChannel()!=Token.DEFAULT_CHANNEL ) start++;
 		while ( stop>=start && tokens.get(stop).getChannel()!=Token.DEFAULT_CHANNEL ) stop--;
-		if ( start>stop ) return null;
+		if ( start>stop ) throw new Rejected(NOT_A_UNIT_RUN);
 
-		Boolean lexerRule = ExtractRuleOccurrences.isInLexerRule(tree, start);
-		ParserRuleContext ruleSpec = enclosingRuleSpec(tree, start);
-		if ( lexerRule==null || ruleSpec==null ) return null;
-		if ( !ExtractRuleOccurrences.isUnitRun(tree, start, stop) ) return null;
+		ParserRuleContext rule = ExtractRuleOccurrences.enclosingRule(tree, start);
+		if ( rule==null || !ExtractRuleOccurrences.isUnitRun(tree, start, stop) ) throw new Rejected(NOT_A_UNIT_RUN);
+		String problem = ExtractRuleOccurrences.problem(rule, tokens, Interval.of(start, stop));
+		if ( problem!=null ) throw new Rejected(problem);
+		boolean lexerRule = ExtractRuleOccurrences.isLexerRule(rule);
 
 		List<TextRange> occurrences = new ArrayList<>();
 		for (Interval occ : ExtractRuleOccurrences.find(tree, tokens, start, stop)) {
@@ -92,7 +113,7 @@ public final class ExtractRulePlan {
 		Set<String> existing = ExtractRuleNameSuggester.existingNames(tree);
 		String name = ExtractRuleNameSuggester.suggest(tokens, start, stop, lexerRule, existing);
 		return new ExtractRulePlan(grammarText, range(tokens, start, stop), occurrences, lexerRule,
-		                           existing, name, ruleSpec.getStop().getStopIndex());
+		                           existing, name, rule.getStop().getStopIndex());
 	}
 
 	/** The edits, last offset first, so they can be applied in order without shifting offsets. */
@@ -135,11 +156,4 @@ public final class ExtractRulePlan {
 		                     tokens.get(stopTokenIndex).getStopIndex() + 1);
 	}
 
-	private static ParserRuleContext enclosingRuleSpec(ParserRuleContext tree, int tokenIndex) {
-		Tree node = Trees.getRootOfSubtreeEnclosingRegion(tree, tokenIndex, tokenIndex);
-		while ( node!=null && !(node instanceof ANTLRv4Parser.RuleSpecContext) ) {
-			node = node.getParent();
-		}
-		return (ParserRuleContext) node;
-	}
 }

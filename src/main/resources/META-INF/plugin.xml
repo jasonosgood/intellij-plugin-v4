@@ -133,7 +133,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
 		<action id="antlr.SortRules"
 			class="org.antlr.intellij.plugin.actions.SortRulesAction"
 			text="Sort Parser Rules"
-			description="Sort parser rules alphabetically; keeps the start rule first and lexer rules in place">
+			description="Sort parser rules alphabetically, keeping the start rule first; lexer rules move after the parser rules in their original order">
 			<add-to-group group-id="CodeMenu" anchor="after" relative-to-action="ReformatCode"/>
 		</action>
 		<action id="antlr.UniquifyRuleRefs"
@@ -153,7 +153,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
                   factoryClass="org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory"/>
       <formattingService implementation="org.antlr.intellij.plugin.format.GrammarFormattingService"/>
       <notificationGroup id="ANTLR Grammar Tools" displayType="BALLOON"/>
-      <fileTypeFactory implementation="org.antlr.intellij.plugin.ANTLRv4FileTypeFactory"/>
+      <fileType name="ANTLR v4 grammar file" implementationClass="org.antlr.intellij.plugin.ANTLRv4FileType" fieldName="INSTANCE" language="ANTLRv4" extensions="g4"/>
       <lang.syntaxHighlighterFactory language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.ANTLRv4SyntaxHighlighterFactory"/>
       <lang.commenter language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.ANTLRv4Commenter" />
       <indexPatternBuilder implementation="org.antlr.intellij.plugin.psi.ANTLRv4IndexPatternBuilder"/>
@@ -172,9 +172,6 @@ For really big files and slow grammars, there is an appreciable delay when displ
       <lang.findUsagesProvider language="ANTLRv4"
                 implementationClass="org.antlr.intellij.plugin.ANTLRv4FindUsagesProvider"/>
 
-      <defaultLiveTemplates file="/liveTemplates/lexer/user.xml"/>
-	  <liveTemplateContext contextId="OTHER" implementation="org.antlr.intellij.plugin.templates.ANTLRGenericContext"/>
-	  <liveTemplateContext contextId="OTHER" implementation="org.antlr.intellij.plugin.templates.OutsideRuleContext"/>
       <projectConfigurable groupId="language"
                            id="org.antlr.intellij.plugin.configdialogs.ANTLRv4ProjectSettings"
                            displayName="ANTLR v4 default project settings"

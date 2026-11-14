@@ -11,7 +11,13 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.roots.ContentEntry;
+import com.intellij.openapi.roots.ModuleRootManager;
+import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.roots.SourceFolder;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
@@ -76,7 +82,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 		ANTLRv4GrammarProperties grammarProperties = getGrammarProperties(project, grammarFile);
 		boolean autogen = grammarProperties.shouldAutoGenerateParser();
 		if ( forceGeneration || (autogen && isGrammarStale(grammarProperties)) ) {
-			ReadAction.run(() -> antlr(grammarFile));
+			ReadAction.runBlocking(() -> antlr(grammarFile));
 		}
 		else {
 			ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
@@ -195,7 +201,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 		String package_ = grammarProperties.getPackage();
 		if ( isBlank(package_) && !hasPackageDeclarationInHeader(project, vfile)) {
-			package_ = ProjectRootManager.getInstance(project).getFileIndex().getPackageNameByDirectory(vfile.getParent());
+			package_ = packageNameOf(project, vfile.getParent());
 		}
 		if ( isNotBlank(package_) ) {
 			args.put("-package", package_);
@@ -264,8 +270,36 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 		return vfile.getParent().getPath();
 	}
 
+	/**
+	 * The JVM package of a directory: its path below its source root, after that root's package
+	 * prefix; "" for the root itself, null outside source roots. Same result as the deprecated
+	 * {@code ProjectFileIndex.getPackageNameByDirectory}, whose replacement ({@code PackageIndex})
+	 * is in the Java plugin, which this plugin doesn't require.
+	 */
+	@Nullable
+	static String packageNameOf(Project project, VirtualFile dir) {
+		return ReadAction.computeBlocking(() -> {
+			ProjectFileIndex index = ProjectFileIndex.getInstance(project);
+			VirtualFile root = index.getSourceRootForFile(dir);
+			if ( root==null ) return null;
+			String relative = VfsUtilCore.getRelativePath(dir, root, '.');
+			if ( relative==null ) return null;
+			String prefix = "";
+			Module module = index.getModuleForFile(dir);
+			if ( module!=null ) {
+				for (ContentEntry entry : ModuleRootManager.getInstance(module).getContentEntries()) {
+					for (SourceFolder folder : entry.getSourceFolders()) {
+						if ( root.equals(folder.getFile()) ) prefix = folder.getPackagePrefix();
+					}
+				}
+			}
+			if ( prefix.isEmpty() ) return relative;
+			return relative.isEmpty() ? prefix : prefix+"."+relative;
+		});
+	}
+
 	private static VirtualFile getContentRoot(Project project, VirtualFile vfile) {
-		return ReadAction.compute(() -> {
+		return ReadAction.computeBlocking(() -> {
 			VirtualFile root = ProjectRootManager.getInstance(project).getFileIndex().getContentRootForFile(vfile);
 
 			if (root != null) {

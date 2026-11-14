@@ -66,12 +66,15 @@ if (!file("$xlDir/src/xl/Formatter.java").exists()) {
     throw new GradleException("antlr4-xl not found at $xlDir; run: git submodule update --init")
 }
 def xlTools = ["Formatter", "SortRules"]
+// The meta-grammar is moving from grammar/ to src/xl/ in antlr4-xl. Include exactly one copy:
+// with -Xexact-output-dir both would generate into the same folder and the last would win.
+def xlGrammar = ["src/xl/ANTLR4.g4", "grammar/ANTLR4.g4"].find { file("$xlDir/$it").exists() }
 
 sourceSets {
     xl {
         antlr {
             srcDirs = [xlDir]
-            include "grammar/ANTLR4.g4", "src/xl/ANTLR4.g4"
+            include xlGrammar
         }
         java {
             srcDir "$xlDir/src"
@@ -105,7 +108,6 @@ dependencies {
     intellijPlatform {
         create(platformType, platformVersion)
         testFramework(TestFrameworkType.Platform.INSTANCE)
-        bundledModule("intellij.platform.structureView")
     }
     antlr("org.antlr:antlr4:$antlr4Version") { // use ANTLR version 4
         exclude group:'com.ibm.icu', module:'icu4j'

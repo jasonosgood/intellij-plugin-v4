@@ -1,5 +1,6 @@
 package org.antlr.intellij.plugin.preview;
 
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.hint.HintManagerImpl;
 import com.intellij.codeInsight.hint.HintUtil;
@@ -7,8 +8,8 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.*;
 import com.intellij.openapi.editor.event.CaretListener;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.EditorMarkupModel;
 import com.intellij.openapi.editor.markup.*;
@@ -124,8 +125,9 @@ public class InputPanel {
 		fileChooser.addActionListener(e -> fileRadioButton.setSelected(true)); // listens to the browse button
 		fileChooser.setTextFieldPreferredWidth(40);
 
-		inputRadioButton.addActionListener(e -> selectInputEvent());
-		fileRadioButton.addActionListener(e -> selectFileEvent());
+		// plain Swing events hold no lock; these replace the input editor
+		inputRadioButton.addActionListener(e -> WriteIntentReadAction.run(this::selectInputEvent));
+		fileRadioButton.addActionListener(e -> WriteIntentReadAction.run(this::selectFileEvent));
 
 		resetStartRuleLabel();
 
@@ -158,16 +160,17 @@ public class InputPanel {
 	public void createManualInputPreviewEditor(final PreviewState previewState) {
 		final EditorFactory factory = EditorFactory.getInstance();
 		Document doc = factory.createDocument("");
+		Editor editor = createPreviewEditor(previewState.grammarFile, doc, false);
+		// Scoped like the editor's reparse listener; released with the editor.
 		doc.addDocumentListener(
-			new DocumentAdapter() {
+			new DocumentListener() {
 				@Override
-				public void documentChanged(DocumentEvent e) {
+				public void documentChanged(@NotNull DocumentEvent e) {
 					previewState.manualInputText = e.getDocument().getCharsSequence();
 				}
-			}
-		                       );
-
-		Editor editor = createPreviewEditor(previewState.grammarFile, doc, false);
+			},
+			editor.getUserData(PreviewState.INPUT_LISTENER_SCOPE)
+		);
 		setEditorComponent(editor.getComponent()); // do before setting state
 		previewState.setInputEditor(editor);
 
@@ -224,9 +227,9 @@ public class InputPanel {
 		Disposable listenerScope = Disposer.newDisposable(
 			ANTLRv4PluginController.getInstance(previewPanel.project), "ANTLR preview input listeners");
 		doc.addDocumentListener(
-			new DocumentAdapter() {
+			new DocumentListener() {
 				@Override
-				public void documentChanged(DocumentEvent event) {
+				public void documentChanged(@NotNull DocumentEvent event) {
 					previewPanel.updateParseTreeFromDoc(grammarFile);
 				}
 			},

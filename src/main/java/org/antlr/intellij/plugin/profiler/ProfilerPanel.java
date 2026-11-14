@@ -1,5 +1,6 @@
 package org.antlr.intellij.plugin.profiler;
 
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.openapi.editor.CaretModel;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
@@ -383,8 +384,11 @@ public class ProfilerPanel {
 						int decision = profilerDataTable.convertRowIndexToModel(selectedRow);
 						int numberOfDecisions = previewState.g.atn.getNumberOfDecisions();
 						if ( decision<=numberOfDecisions ) {
-							selectDecisionInGrammar(previewState, decision);
-							highlightInputPhrases(previewState, decision);
+							// a plain Swing event holds no lock; editors and documents need one
+							WriteIntentReadAction.run(() -> {
+								selectDecisionInGrammar(previewState, decision);
+								highlightInputPhrases(previewState, decision);
+							});
 						}
 					}
 				}

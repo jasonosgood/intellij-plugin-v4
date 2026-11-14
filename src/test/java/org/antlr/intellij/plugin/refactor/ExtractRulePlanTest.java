@@ -3,7 +3,9 @@ package org.antlr.intellij.plugin.refactor;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Plain JUnit (no IDE fixture) for name suggestion and the resulting grammar text.
@@ -143,7 +145,67 @@ public class ExtractRulePlanTest {
 		             extract("lexer grammar T;\nX : «'a'*» 'b' ;\n", "N", false));
 	}
 
+	@Test
+	public void rejectsLeftRecursiveSelection() {
+		assertTrue(reason("grammar T;\ne : «e '*' e» | INT ;\n").contains("left-recursive"));
+	}
+
+	@Test
+	public void allowsOwnRuleReferenceNotAtLeftEdge() {
+		assertEquals("grammar T;\ne : '(' n ')' | INT ;\n\nn : e '*' e ;\n",
+		             extract("grammar T;\ne : '(' «e '*' e» ')' | INT ;\n", "n", false));
+	}
+
+	@Test
+	public void replaceAllSkipsLeftRecursiveOccurrences() {
+		ExtractRulePlan plan = plan("grammar T;\ne : e '*' e | INT ;\nx : «e '*' e» ;\n");
+		assertEquals(1, plan.occurrences.size());
+	}
+
+	@Test
+	public void alternativeLabelsMoveOnlyWithAllAlternatives() {
+		assertTrue(reason("grammar T;\nx : «A # a | B # b» | C # c ;\n").contains("label"));
+		assertEquals("grammar T;\nx : n ;\n\nn : A # a | B # b ;\n",
+		             extract("grammar T;\nx : «A # a | B # b» ;\n", "n", false));
+	}
+
+	@Test
+	public void rejectsBreakingActionReferences() {
+		assertTrue(reason("grammar T;\nx : «y=A» B {$y.text} ;\n").contains("$y"));    // label moves away
+		assertTrue(reason("grammar T;\nx : «A» B {$A.text} ;\n").contains("$A"));      // element moves away
+		assertTrue(reason("grammar T;\nx : A «B {$A.text}» ;\n").contains("$A"));      // action loses its element
+		assertTrue(reason("grammar T;\nx : «B {$text}» ;\n").contains("$text"));       // rule attribute
+		assertEquals("grammar T;\nx : n B ;\n\nn : y=A {$y.text} ;\n",
+		             extract("grammar T;\nx : «y=A {$y.text}» B ;\n", "n", false));    // moves together
+	}
+
+	@Test
+	public void replaceAllSkipsOccurrencesWhoseActionsWouldBreak() {
+		ExtractRulePlan plan = plan("grammar T;\nx : «A B» ;\ny : A B {$B.text} ;\nz : A B ;\n");
+		assertEquals(2, plan.occurrences.size()); // x and z, not y
+	}
+
+	@Test
+	public void reservedNames() {
+		assertTrue(ExtractRuleNameSuggester.isReserved("class"));
+		assertTrue(ExtractRuleNameSuggester.isReserved("grammar"));
+		assertTrue(ExtractRuleNameSuggester.isReserved("null"));
+		assertFalse(ExtractRuleNameSuggester.isReserved("expr"));
+	}
+
 	// ---------------------------------------------------------------------------------
+
+	private static String reason(String marked) {
+		int start = marked.indexOf('«');
+		int end = marked.indexOf('»') - 1;
+		try {
+			ExtractRulePlan.plan(marked.replace("«", "").replace("»", ""), start, end);
+			return "";
+		}
+		catch (ExtractRulePlan.Rejected r) {
+			return r.getMessage();
+		}
+	}
 
 	private static ExtractRulePlan plan(String marked) {
 		int start = marked.indexOf('«');

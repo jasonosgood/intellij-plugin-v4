@@ -9,11 +9,16 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.Tree;
 import org.antlr.v4.runtime.tree.Trees;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Finds every place in a grammar that an extracted rule body could replace.
@@ -50,15 +55,105 @@ public final class ExtractRuleOccurrences {
 		List<Interval> found = new ArrayList<>();
 		found.add(selection);
 
-		Boolean inLexerRule = isInLexerRule(tree, startTokenIndex);
-		if ( !wanted.isEmpty() && inLexerRule!=null ) {
+		ParserRuleContext rule = enclosingRule(tree, startTokenIndex);
+		if ( !wanted.isEmpty() && rule!=null ) {
 			Set<Interval> candidates = new LinkedHashSet<>();
-			collect(tree, inLexerRule, null, tokens, wanted, candidates);
+			collect(tree, isLexerRule(rule), null, tokens, wanted, candidates);
 			candidates.remove(selection);
-			found.addAll(candidates);
+			for (Interval candidate : candidates) {
+				ParserRuleContext candidateRule = enclosingRule(tree, candidate.a);
+				if ( candidateRule!=null && problem(candidateRule, tokens, candidate)==null ) {
+					found.add(candidate);
+				}
+			}
 		}
 
 		return removeOverlaps(found, selection);
+	}
+
+	/**
+	 * Why replacing tokens {@code occ} of {@code rule} by a reference to a new rule holding
+	 * them would break the grammar, or null if it wouldn't. Assumes {@code occ} is a unit run
+	 * ({@link #isUnitRun}). Checks:
+	 * <ul>
+	 *   <li>left recursion: {@code e : e '*' e | INT ;} becomes {@code e : n | INT ; n : e '*' e ;},
+	 *       mutually left-recursive rules, which ANTLR rejects;</li>
+	 *   <li>alternative labels: moving some but not all {@code # label}ed alternatives leaves
+	 *       the rule with labelled and unlabelled alternatives, which ANTLR rejects;</li>
+	 *   <li>actions: a {@code $x} outside the run that names a label or element inside it, or a
+	 *       {@code $x} inside it that names anything else (labels, elements, rule attributes
+	 *       such as {@code $text}, arguments), would resolve differently or not at all.</li>
+	 * </ul>
+	 */
+	@Nullable
+	static String problem(ParserRuleContext rule, TokenStream tokens, Interval occ) {
+		if ( rule instanceof ANTLRv4Parser.ParserRuleSpecContext ) {
+			ANTLRv4Parser.ParserRuleSpecContext parserRule = (ANTLRv4Parser.ParserRuleSpecContext) rule;
+			List<ANTLRv4Parser.LabeledAltContext> alts = parserRule.ruleBlock().ruleAltList().labeledAlt();
+			Token first = tokens.get(occ.a);
+			if ( first.getType()==ANTLRv4Parser.RULE_REF && first.getText().equals(parserRule.RULE_REF().getText()) ) {
+				for (ANTLRv4Parser.LabeledAltContext alt : alts) {
+					if ( !isEmpty(alt) && alt.getStart().getTokenIndex()==occ.a ) {
+						return "It starts with a reference to its own rule '" + first.getText() +
+							"', so the new rule and '" + first.getText() + "' would be mutually " +
+							"left-recursive, which ANTLR doesn't allow.";
+					}
+				}
+			}
+			boolean labelInside = false;
+			for (ANTLRv4Parser.LabeledAltContext alt : alts) {
+				if ( alt.POUND()!=null && occ.properlyContains(Interval.of(alt.POUND().getSymbol().getTokenIndex(),
+				                                                           alt.POUND().getSymbol().getTokenIndex())) ) {
+					labelInside = true;
+				}
+			}
+			boolean allAlts = !alts.isEmpty() && alts.get(0).getStart().getTokenIndex()==occ.a
+				&& alts.get(alts.size() - 1).getStop().getTokenIndex()==occ.b;
+			if ( labelInside && !allAlts ) {
+				return "It includes '# label'ed alternatives but not all of the rule's alternatives, " +
+					"so the rule would mix labelled and unlabelled alternatives, which ANTLR doesn't allow.";
+			}
+		}
+
+		Set<String> namesInside = new HashSet<>();   // labels and rule/token references
+		Set<String> namesOutside = new HashSet<>();
+		StringBuilder actionsInside = new StringBuilder();
+		StringBuilder actionsOutside = new StringBuilder();
+		for (int i = rule.getStart().getTokenIndex(); i<=rule.getStop().getTokenIndex(); i++) {
+			Token t = tokens.get(i);
+			boolean inside = occ.a<=i && i<=occ.b;
+			int type = t.getType();
+			if ( type==ANTLRv4Parser.ACTION_CONTENT || type==ANTLRv4Parser.ARGUMENT_CONTENT ) {
+				(inside ? actionsInside : actionsOutside).append(t.getText());
+				continue;
+			}
+			(inside ? actionsInside : actionsOutside).append(' '); // separates actions
+			if ( type==ANTLRv4Parser.RULE_REF || type==ANTLRv4Parser.TOKEN_REF ) {
+				(inside ? namesInside : namesOutside).add(t.getText());
+			}
+		}
+		Set<String> onlyInside = new HashSet<>(namesInside);
+		onlyInside.removeAll(namesOutside);
+		for (String ref : attributeRefs(actionsOutside)) {
+			if ( onlyInside.contains(ref) ) {
+				return "An action elsewhere in the rule uses $" + ref + ", which would move to the new rule.";
+			}
+		}
+		for (String ref : attributeRefs(actionsInside)) {
+			if ( !namesInside.contains(ref) ) {
+				return "An action in it uses $" + ref + ", which would mean something else in the new rule.";
+			}
+		}
+		return null;
+	}
+
+	private static final Pattern ATTRIBUTE_REF = Pattern.compile("\\$([A-Za-z_][A-Za-z0-9_]*)");
+
+	private static Set<String> attributeRefs(CharSequence actionText) {
+		Set<String> refs = new LinkedHashSet<>();
+		Matcher m = ATTRIBUTE_REF.matcher(actionText);
+		while ( m.find() ) refs.add(m.group(1));
+		return refs;
 	}
 
 	/**
@@ -131,18 +226,29 @@ public final class ExtractRuleOccurrences {
 		return null;
 	}
 
+	/** Adds each run of units whose significant tokens equal {@code wanted}; linear per start unit. */
 	private static void matchRuns(List<? extends ParserRuleContext> units, TokenStream tokens,
 	                              List<String> wanted, Set<Interval> out) {
 		for (int i = 0; i<units.size(); i++) {
 			Token first = units.get(i).getStart();
 			if ( isEmpty(units.get(i)) || !first.getText().equals(wanted.get(0)) ) continue;
+			int matched = 0; // tokens of wanted matched so far
 			for (int j = i; j<units.size(); j++) {
-				ParserRuleContext last = units.get(j);
-				if ( isEmpty(last) ) break;
-				int stop = last.getStop().getTokenIndex();
-				List<String> run = significantTokens(tokens, first.getTokenIndex(), stop);
-				if ( run.size()>wanted.size() ) break;
-				if ( run.equals(wanted) ) {
+				ParserRuleContext unit = units.get(j);
+				if ( isEmpty(unit) ) break;
+				int stop = unit.getStop().getTokenIndex();
+				// significant tokens between units (e.g. '|' in an alt list) belong to the run too
+				int from = j==i ? first.getTokenIndex() : units.get(j - 1).getStop().getTokenIndex() + 1;
+				boolean ok = true;
+				for (String text : significantTokens(tokens, from, stop)) {
+					if ( matched>=wanted.size() || !text.equals(wanted.get(matched)) ) {
+						ok = false;
+						break;
+					}
+					matched++;
+				}
+				if ( !ok ) break;
+				if ( matched==wanted.size() ) {
 					out.add(Interval.of(first.getTokenIndex(), stop));
 					break;
 				}
@@ -172,29 +278,21 @@ public final class ExtractRuleOccurrences {
 		return result;
 	}
 
-	/** True if the token is in a lexer rule, false if in a parser rule, null if neither. */
-	static Boolean isInLexerRule(ParserRuleContext tree, int tokenIndex) {
-		ParseTree node = deepestEnclosing(tree, tokenIndex);
+	/** The parser rule ({@code parserRuleSpec}) or lexer rule ({@code lexerRule}) holding the token, or null. */
+	@Nullable
+	static ParserRuleContext enclosingRule(ParserRuleContext tree, int tokenIndex) {
+		Tree node = Trees.getRootOfSubtreeEnclosingRegion(tree, tokenIndex, tokenIndex);
 		while ( node!=null ) {
-			if ( node instanceof ANTLRv4Parser.ParserRuleSpecContext ) return false;
-			if ( node instanceof ANTLRv4Parser.LexerRuleContext ) return true;
+			if ( node instanceof ANTLRv4Parser.ParserRuleSpecContext || node instanceof ANTLRv4Parser.LexerRuleContext ) {
+				return (ParserRuleContext) node;
+			}
 			node = node.getParent();
 		}
 		return null;
 	}
 
-	private static ParseTree deepestEnclosing(ParserRuleContext ctx, int tokenIndex) {
-		for (int i = 0; i<ctx.getChildCount(); i++) {
-			ParseTree child = ctx.getChild(i);
-			if ( child instanceof ParserRuleContext ) {
-				ParserRuleContext c = (ParserRuleContext) child;
-				if ( !isEmpty(c) && c.getStart().getTokenIndex()<=tokenIndex
-					&& tokenIndex<=c.getStop().getTokenIndex() ) {
-					return deepestEnclosing(c, tokenIndex);
-				}
-			}
-		}
-		return ctx;
+	static boolean isLexerRule(ParserRuleContext rule) {
+		return rule instanceof ANTLRv4Parser.LexerRuleContext;
 	}
 
 	/** Keeps the selection, then greedily keeps earlier occurrences over later overlapping ones. */

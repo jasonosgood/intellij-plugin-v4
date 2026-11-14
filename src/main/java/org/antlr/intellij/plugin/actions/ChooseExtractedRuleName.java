@@ -1,6 +1,7 @@
 package org.antlr.intellij.plugin.actions;
 
 import com.intellij.openapi.project.Project;
+import org.antlr.intellij.plugin.refactor.ExtractRuleNameSuggester;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.ValidationInfo;
 import com.intellij.ui.components.JBTextField;
@@ -44,6 +45,9 @@ public class ChooseExtractedRuleName extends DialogWrapper {
 		}
 		if ( !lexerRule && !Character.isLowerCase(name.charAt(0)) ) {
 			return new ValidationInfo("Parser rule names must start with a lower-case letter", nameField);
+		}
+		if ( ExtractRuleNameSuggester.isReserved(name) ) {
+			return new ValidationInfo("'" + name + "' is a reserved word in ANTLR or Java", nameField);
 		}
 		if ( existingNames.contains(name) ) {
 			return new ValidationInfo("'" + name + "' is already defined", nameField);

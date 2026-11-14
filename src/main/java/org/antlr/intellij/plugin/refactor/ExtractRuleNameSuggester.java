@@ -7,6 +7,7 @@ import org.antlr.v4.runtime.TokenStream;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.Trees;
 
+import javax.lang.model.SourceVersion;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -27,17 +28,18 @@ import java.util.Set;
 public final class ExtractRuleNameSuggester {
 	private static final int MAX_WORDS = 3;
 
-	private static final Set<String> RESERVED = new HashSet<>(Arrays.asList(
-		// ANTLR
+	/** Words ANTLR doesn't accept as rule names. */
+	private static final Set<String> ANTLR_RESERVED = new HashSet<>(Arrays.asList(
 		"options", "tokens", "channels", "import", "fragment", "lexer", "parser", "grammar",
-		"returns", "locals", "throws", "catch", "finally", "mode", "rule", "EOF",
-		// Java, the default target, where rule names become method names
-		"abstract", "assert", "boolean", "break", "byte", "case", "char", "class", "const",
-		"continue", "default", "do", "double", "else", "enum", "extends", "final", "float",
-		"for", "goto", "if", "implements", "instanceof", "int", "interface", "long", "native",
-		"new", "package", "private", "protected", "public", "return", "short", "static",
-		"strictfp", "super", "switch", "synchronized", "this", "throw", "transient", "try",
-		"void", "volatile", "while", "true", "false", "null"));
+		"returns", "locals", "throws", "catch", "finally", "mode", "rule", "EOF"));
+
+	/**
+	 * True if {@code name} can't be a rule name: an ANTLR keyword, or a keyword or literal of
+	 * Java, the default target, where rule names become method and class names.
+	 */
+	public static boolean isReserved(String name) {
+		return ANTLR_RESERVED.contains(name) || SourceVersion.isKeyword(name);
+	}
 
 	private ExtractRuleNameSuggester() {
 	}
@@ -52,7 +54,7 @@ public final class ExtractRuleNameSuggester {
 		else {
 			base = lexerRule ? toUpperSnake(words) : toCamel(words);
 		}
-		if ( RESERVED.contains(base) ) {
+		if ( isReserved(base) ) {
 			base += lexerRule ? "_RULE" : "Rule";
 		}
 		return unique(base, existingNames);

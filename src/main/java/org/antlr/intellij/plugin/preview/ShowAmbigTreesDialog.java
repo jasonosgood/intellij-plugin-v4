@@ -2,11 +2,9 @@ package org.antlr.intellij.plugin.preview;
 
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.ui.popup.PopupChooserBuilder;
 import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
-import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBPanel;
 import org.antlr.intellij.plugin.Utils;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
@@ -52,12 +50,10 @@ public class ShowAmbigTreesDialog extends JDialog {
 
 	public static JBPopup createAmbigTreesPopup(final PreviewState previewState,
 	                                            final AmbiguityInfo ambigInfo) {
-		final JBList list = new JBList("Show all phrase interpretations");
-		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		JBPopupFactory factory = JBPopupFactory.getInstance();
-		PopupChooserBuilder builder = factory.createListPopupBuilder(list);
-		builder.setItemChoosenCallback(() -> popupAmbigTreesDialog(previewState, ambigInfo));
-		return builder.createPopup();
+		return JBPopupFactory.getInstance()
+			.createPopupChooserBuilder(List.of("Show all phrase interpretations"))
+			.setItemChosenCallback(item -> popupAmbigTreesDialog(previewState, ambigInfo))
+			.createPopup();
 	}
 
 	public static void popupAmbigTreesDialog(PreviewState previewState, AmbiguityInfo ambigInfo) {
@@ -103,13 +99,10 @@ public class ShowAmbigTreesDialog extends JDialog {
 
 	public static JBPopup createLookaheadTreesPopup(final PreviewState previewState,
 	                                                final LookaheadEventInfo lookaheadInfo) {
-		final JBList list = new JBList("Show all lookahead interpretations");
-		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		JBPopupFactory factory = JBPopupFactory.getInstance();
-		PopupChooserBuilder builder = factory.createListPopupBuilder(list);
-		builder.setItemChoosenCallback(() -> popupLookaheadTreesDialog(previewState, lookaheadInfo));
-
-		return builder.createPopup();
+		return JBPopupFactory.getInstance()
+			.createPopupChooserBuilder(List.of("Show all lookahead interpretations"))
+			.setItemChosenCallback(item -> popupLookaheadTreesDialog(previewState, lookaheadInfo))
+			.createPopup();
 	}
 
 	public static void popupLookaheadTreesDialog(PreviewState previewState, LookaheadEventInfo lookaheadInfo) {

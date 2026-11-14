@@ -1,5 +1,6 @@
 package org.antlr.intellij.plugin.preview;
 
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.ui.components.JBScrollPane;
 import org.antlr.intellij.plugin.Icons;
 import org.antlr.v4.gui.TreeTextProvider;
@@ -162,8 +163,11 @@ class HierarchyViewer extends JPanel implements TreeSelectionListener {
 		DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
 		Tree tree = (Tree) node.getUserObject();
 
-		for ( ParsingResultSelectionListener listener : selectionListeners ) {
-			listener.onParserRuleSelected(tree);
-		}
+		// a plain Swing event holds no lock; the listeners highlight text in the input editor
+		WriteIntentReadAction.run(() -> {
+			for ( ParsingResultSelectionListener listener : selectionListeners ) {
+				listener.onParserRuleSelected(tree);
+			}
+		});
 	}
 }

@@ -42,18 +42,19 @@ import java.util.*;
 import static org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarPropertiesStore.getGrammarProperties;
 
 public class ParsingUtils {
-	public static Grammar BAD_PARSER_GRAMMAR;
-	public static LexerGrammar BAD_LEXER_GRAMMAR;
+	/** Markers for "this grammar failed to load"; compared by identity. */
+	public static final Grammar BAD_PARSER_GRAMMAR = badGrammar(false);
+	public static final LexerGrammar BAD_LEXER_GRAMMAR = (LexerGrammar) badGrammar(true);
 
-	static {
+	private static Grammar badGrammar(boolean lexer) {
 		try {
-			ParsingUtils.BAD_PARSER_GRAMMAR = new Grammar("grammar BAD; a : 'bad' ;");
-			ParsingUtils.BAD_PARSER_GRAMMAR.name = "BAD_PARSER_GRAMMAR";
-			ParsingUtils.BAD_LEXER_GRAMMAR = new LexerGrammar("lexer grammar BADLEXER; A : 'bad' ;");
-			ParsingUtils.BAD_LEXER_GRAMMAR.name = "BAD_LEXER_GRAMMAR";
+			Grammar g = lexer ? new LexerGrammar("lexer grammar BADLEXER; A : 'bad' ;")
+			                  : new Grammar("grammar BAD; a : 'bad' ;");
+			g.name = lexer ? "BAD_LEXER_GRAMMAR" : "BAD_PARSER_GRAMMAR";
+			return g;
 		}
 		catch (org.antlr.runtime.RecognitionException re) {
-			ANTLRv4PluginController.LOG.error("can't init bad grammar markers");
+			throw new IllegalStateException("can't init bad grammar markers", re);
 		}
 	}
 
@@ -344,17 +345,19 @@ public class ParsingUtils {
 		return g;
 	}
 
+	/** The grammar's text as the editor has it (unsaved changes included), else as on disk. */
+	public static String grammarText(VirtualFile grammarFile) throws IOException {
+		// May be called from the grammar loader thread, so snapshot the text under a (short) read lock
+		String grammarText = ReadAction.computeBlocking(() -> {
+			Document document = FileDocumentManager.getInstance().getDocument(grammarFile);
+			return document != null ? document.getText() : null;
+		});
+		return grammarText!=null ? grammarText : new String(grammarFile.contentsToByteArray());
+	}
+
 	public static GrammarRootAST parseGrammar(Tool antlr, VirtualFile grammarFile) {
 		try {
-			// Called from the grammar loader thread, so snapshot the editor text under a (short) read lock
-			String grammarText = ReadAction.compute(() -> {
-				Document document = FileDocumentManager.getInstance().getDocument(grammarFile);
-				return document != null ? document.getText() : null;
-			});
-			if ( grammarText == null ) {
-				grammarText = new String(grammarFile.contentsToByteArray());
-			}
-
+			String grammarText = grammarText(grammarFile);
 			ANTLRStringStream in = new ANTLRStringStream(grammarText);
 			in.name = grammarFile.getPath();
 			return antlr.parse(grammarFile.getPath(), in);

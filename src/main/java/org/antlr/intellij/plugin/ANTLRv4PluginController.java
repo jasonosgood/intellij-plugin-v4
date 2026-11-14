@@ -46,6 +46,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -110,6 +111,8 @@ public final class ANTLRv4PluginController implements Disposable {
 	private ProgressIndicator parsingProgressIndicator;
 
 	private final Map<String, Long> grammarFileMods = new HashMap<>();
+	/** Text of each grammar when it was last loaded, by path; see {@link #grammarFileSavedEvent}. */
+	private final Map<String, String> loadedGrammarText = new ConcurrentHashMap<>();
 
 	/** Loading a grammar runs ANTLR's full analysis pipeline, which can take seconds
 	 *  on large grammars, so it must never run on the EDT. All loads run in order on
@@ -248,6 +251,22 @@ public final class ANTLRv4PluginController implements Disposable {
 		}
 
 		grammarFileMods.put(grammarFilePath, modCount);
+
+		// A content-change event also arrives a few seconds after a project opens, with nothing
+		// edited. Reload only if the text differs from what was last loaded: comparing content,
+		// not trusting change events, is what file watchers such as Gradle's and webpack's do.
+		String loadedText = loadedGrammarText.get(grammarFilePath);
+		if ( loadedText!=null ) {
+			try {
+				if ( loadedText.equals(ParsingUtils.grammarText(grammarFile)) ) {
+					LOG.info("grammarFileSavedEvent "+grammarFilePath+" unchanged since loaded; not reloading");
+					return;
+				}
+			}
+			catch (IOException e) {
+				// can't read it; reload, which reports the error
+			}
+		}
 
 		LOG.info("grammarFileSavedEvent "+grammarFilePath+" "+project.getName());
 		final Integer generation = grammarLoadGeneration.merge(grammarFilePath, 1, Integer::sum);
@@ -442,6 +461,12 @@ public final class ANTLRv4PluginController implements Disposable {
 	private String updateGrammarObjectsFromFile_(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
 		PreviewState previewState = getPreviewState(grammarFile);
+		try { // read before loading, so an edit made during the load still counts as a change
+			loadedGrammarText.put(grammarFileName, ParsingUtils.grammarText(grammarFile));
+		}
+		catch (IOException e) {
+			loadedGrammarText.remove(grammarFileName);
+		}
 		Grammar[] grammars = ParsingUtils.loadGrammars(grammarFile, project);
 		if (grammars != null) {
 			synchronized (previewState) { // build atomically
