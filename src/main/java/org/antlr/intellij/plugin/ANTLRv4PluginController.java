@@ -96,6 +96,8 @@ public final class ANTLRv4PluginController implements Disposable {
 	public final Project project;
 	private ConsoleView console;
 	private boolean opened; // projectOpened() has run; EDT only
+	/** Grammar projectOpened() replayed a selection for; the platform's own event for it is skipped. EDT only. */
+	private VirtualFile replayedStartupGrammar;
 
 	public final Map<String, PreviewState> grammarToPreviewState =
 		Collections.synchronizedMap(new HashMap<>());
@@ -152,10 +154,13 @@ public final class ANTLRv4PluginController implements Disposable {
 
 		installListeners();
 
-		// A grammar restored in an editor at startup was selected before the panel existed.
+		// A grammar restored in an editor at startup may have been selected before the panel
+		// existed. Replay its selection; if the platform's own selection event for it is still
+		// on its way, currentEditorFileChangedEvent skips that one.
 		VirtualFile current = getCurrentGrammarFile();
 		if ( current!=null ) {
 			currentEditorFileChangedEvent(null, current, false);
+			replayedStartupGrammar = current;
 		}
 	}
 
@@ -267,6 +272,11 @@ public final class ANTLRv4PluginController implements Disposable {
 	public void currentEditorFileChangedEvent(VirtualFile oldFile, VirtualFile newFile, boolean modified) {
 		LOG.info("currentEditorFileChangedEvent "+(oldFile!=null?oldFile.getPath():"none")+
 				 " -> "+(newFile!=null?newFile.getPath():"none")+" "+project.getName());
+		VirtualFile replayed = replayedStartupGrammar;
+		replayedStartupGrammar = null; // only the first selection event after the replay can repeat it
+		if ( oldFile==null && newFile!=null && newFile.equals(replayed) ) {
+			return; // projectOpened() already showed this grammar
+		}
 		if ( newFile==null ) { // all files must be closed I guess
 			return;
 		}

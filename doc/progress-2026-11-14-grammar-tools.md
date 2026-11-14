@@ -79,14 +79,16 @@
   (a shared fixture base class), which is worth keeping.
 
 ## Backlog
-1. **Push antlr4-xl to GitHub as `jasonosgood/antlr4-xl`.** Until then CI cannot check out the
-   submodule and fails. If the repo is private, CI needs a token for the checkout.
+1. ~~Push antlr4-xl to GitHub as `jasonosgood/antlr4-xl`.~~ Pushed; the submodule commit is on
+   its `main`, and `../antlr4-xl.git` resolves to it. **The repo is private**, so CI's checkout
+   (default `GITHUB_TOKEN`, scoped to this repo) still can't fetch it: make it public, or add a
+   read-only token secret and pass it as `token:` to `actions/checkout` in both workflows.
 2. **Extract Rule on lexer rules should create a `fragment`.** Extracting `[0-9]+` from `INT`
    currently creates a new token rule `NEW_RULE`, which changes how the input is tokenized.
 3. **Linter → inspections with quick fixes.** xl's `Finding(Token, rule, message, List<Edit>)`
    maps to `LocalInspectionTool` + `LocalQuickFix`. Needs `Linter` (a Java 25 compact source
    file) turned into a class with a callable API returning findings for a text, no file I/O.
-4. Try Extract Rule, Format and Sort by hand in the sandbox (only covered by tests so far).
+4. ~~Try Extract Rule, Format and Sort by hand in the sandbox.~~ Done; all looked right.
 5. Canonicalize (tabled): decide whether the action rewrites the file or shows a diff view.
 6. Offsets: ANTLR char streams count code points, the editor counts UTF-16 chars, so grammars
    with characters outside the BMP (emoji) can shift Extract Rule offsets. Pre-existing.
@@ -176,6 +178,8 @@
     file arrives after startup. Happens in every session in the sandbox log, before and after
     15. Costs one redundant grammar load (up to ~4.5 s on `refactorme.g4`). Find the source of
     the event, or skip reloads when the file's text matches what was last loaded.
-32. Platform warning "use project as a parent disposable" (no stack trace) appeared about once
-    per project open, before and after 15. Our last two project-parented disposables were then
-    moved to the controller; check the next sandbox log to see whether the warning is gone.
+32. Platform warning "use project as a parent disposable" (no stack trace) appears about once
+    per project open. Still there after our last project-parented disposables moved to the
+    controller, so it comes from the platform, not this plugin. Ignore.
+33. Preview input from a file (the "file" radio button) has never worked, and the owner doesn't
+    use it. Not fixing; the listener fixes in section 4 only stop it from leaking.

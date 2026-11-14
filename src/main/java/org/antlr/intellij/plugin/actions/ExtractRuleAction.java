@@ -1,6 +1,6 @@
 package org.antlr.intellij.plugin.actions;
 
-import com.intellij.codeInsight.hint.HintManager;
+import com.intellij.openapi.ui.Messages;
 
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.editor.Document;
@@ -137,8 +137,11 @@ public class ExtractRuleAction extends AnAction {
 		ExtractRulePlan plan = ExtractRulePlan.create(doc.getText(),
 			selectionModel.getSelectionStart(), selectionModel.getSelectionEnd());
 		if ( plan==null ) {
-			HintManager.getInstance().showErrorHint(editor,
-				"Select whole elements or whole alternatives within one rule to extract");
+			// A dialog, not an editor hint: the hint vanished as soon as the caret or mouse moved.
+			Messages.showErrorDialog(psiFile.getProject(),
+				"Select whole elements or whole alternatives within one rule, for example\n" +
+				"\"expr ',' expr\" or \"A | B\", not part of an element or a rule's name or ';'.",
+				"Cannot Extract Rule");
 			return;
 		}
 
