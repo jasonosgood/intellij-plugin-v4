@@ -61,7 +61,8 @@ public final class ExtractRulePlan {
 	}
 
 	/**
-	 * @return the plan, or null if the selection holds no grammar tokens or is not inside a rule body
+	 * @return the plan, or null if the selection holds no grammar tokens or is not whole elements
+	 * or whole alternatives of one rule body (see {@link ExtractRuleOccurrences#isUnitRun})
 	 */
 	@Nullable
 	public static ExtractRulePlan create(String grammarText, int selStart, int selEndExclusive) {
@@ -82,6 +83,7 @@ public final class ExtractRulePlan {
 		Boolean lexerRule = ExtractRuleOccurrences.isInLexerRule(tree, start);
 		ParserRuleContext ruleSpec = enclosingRuleSpec(tree, start);
 		if ( lexerRule==null || ruleSpec==null ) return null;
+		if ( !ExtractRuleOccurrences.isUnitRun(tree, start, stop) ) return null;
 
 		List<TextRange> occurrences = new ArrayList<>();
 		for (Interval occ : ExtractRuleOccurrences.find(tree, tokens, start, stop)) {

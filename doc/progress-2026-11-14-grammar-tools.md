@@ -45,11 +45,31 @@
   it; no glued `;` after a last rule without final newline; checked on 200 grammars-v4 files).
 - Tests: `format/GrammarToolsTest` drives Reformat Code and the Sort action in the IDE fixture.
 
+### 4. Review fixes (Plugin Verifier + `/code-review high master`)
+- `build.gradle`: `pluginVerification` now verifies against the build IDE (`ideaVersion`). It used
+  to fall back to 2020.2.4 (no longer downloadable) because `sinceBuild` is left unset. Mutes
+  `TemplateWordInPluginId`: the published ID `org.antlr.intellij.plugin` can't change.
+- Extract Rule only accepts whole elements or whole alternatives of one rule
+  (`ExtractRuleOccurrences.isUnitRun`, the same model the duplicate search uses); anything else
+  shows an error hint. Fixes selections spanning two rules (overlapping edits corrupted the
+  grammar) and selections of a rule name, `:`, `;`, a dangling `|`, or part of an alternative.
+- Cross-project bleed: the editor-created listener and the VFS save listener are application-
+  wide and had no project filter, so saving a grammar in one project repainted another
+  project's preview. Both now ignore other projects' editors/files.
+- Preview input document listener is scoped to its editor (`PreviewState.INPUT_LISTENER_SCOPE`,
+  disposed on release, project as backstop). For file input it sat on the IDE-wide Document and
+  piled up on each grammar switch, reparsing with stale grammars and outliving the project.
+- After project close: parse completion and slow-parse callbacks check `projectIsClosed`; the
+  reparse `MergingUpdateQueue` is disposed with the project.
+- Formatter: any runtime exception from `xl.Formatter` is logged and reported via `onError`
+  instead of leaving the request hanging.
+
 ## Notes
-- Full suite: `./gradlew check buildPlugin` → 92 tests, 0 failures (as of this write-up).
+- Full suite: `./gradlew check buildPlugin` → 96 tests, 0 failures (after the section 4 fixes).
 - Sandbox: `launch-sandbox.sh` (see the user's Claude memory). Demo grammar used for Extract Rule
   lived in the session scratchpad; recreate from the test cases if needed.
-- `gradle.properties` has a local, uncommitted `org.gradle.java.home` line (machine-specific).
+- `gradle.properties`: the local `org.gradle.java.home` line was removed; `JAVA_HOME` already
+  points at JDK 25, and the Java 25 toolchain finds an installed JDK 25.
 - antlr4-xl's own rules (its CLAUDE.md): tokens and parse trees only, no regex or string
   processing, `var`, commit at logical breakpoints. Its working tree has the owner's staged
   renames in progress (`grammar/ANTLR4.g4` → `src/xl/ANTLR4.g4`); the Gradle build accepts
@@ -71,9 +91,70 @@
 6. Offsets: ANTLR char streams count code points, the editor counts UTF-16 chars, so grammars
    with characters outside the BMP (emoji) can shift Extract Rule offsets. Pre-existing.
 7. Migrate the 7 other fixture tests to `AntlrFixtureTestCase`.
-8. Run the IntelliJ Plugin Verifier against 2026.2.
+8. ~~Run the IntelliJ Plugin Verifier against 2026.2.~~ Done; see 12–14 for what it found.
+   Report: `build/reports/pluginVerifier/IU-262.9437.185/report.html`.
 9. Small: typed exception instead of `IllegalStateException` for xl syntax errors; optional
    `--start` rule for Sort; consider formatting after sorting.
 10. Longer term: the plugin and xl each carry an ANTLR meta-grammar (`ANTLRv4Parser.g4`,
     `ANTLR4.g4`); consider converging.
 11. Release: change notes in `plugin.xml`, version bump.
+
+### From the Plugin Verifier (2026.2.1)
+12. **Compatibility problem**: `structview/ANTLRv4StructureViewFactory.DummyViewTreeElement`
+    uses `com.intellij.ide.structureView.impl.common.PsiTreeElementBase`, which the verifier
+    can't resolve. `build.gradle` compiles against `bundledModule("intellij.platform.structureView")`
+    but `plugin.xml` only depends on `com.intellij.modules.lang`. Check the Structure view on a
+    `.g4` file in the sandbox; if it fails, declare the module dependency in `plugin.xml`.
+13. **Internal API**: `PluginManager.getPlugin()` in `ANTLRv4PluginController.projectOpened()`
+    (Marketplace may reject internal API use). Use `PluginManagerCore.getPlugin` or drop the log line.
+14. **51 deprecated API uses**, mostly from 15 below (project component, `VirtualFileAdapter`,
+    `EditorMouseAdapter`, `registerToolWindow`, `ServiceManager`); `getComponent(Class)` is
+    scheduled for removal. Also `FileTypeFactory`, `DefaultLiveTemplatesProvider`,
+    `ReadAction.run/compute`, `IconLoader.getIcon(String)`, `Document.addDocumentListener`
+    without a disposable.
+
+### Project lifecycle / state
+15. **Convert `ANTLRv4PluginController` from a `ProjectComponent` to a project service that
+    implements `Disposable`** (prior art: every current platform plugin; components are
+    deprecated). Register all listeners, queues, preview editors and the grammar-load executor
+    against it, tool windows via `toolWindow` extension + `ToolWindowFactory`. This removes the
+    manual install/uninstall and the null-out-on-close pattern behind the bleed bugs fixed in
+    section 4, clears most of 14, and makes the plugin dynamic (no IDE restart to enable or
+    disable).
+16. `uninstallListeners()`: `project.getMessageBus().connect(project).disconnect()` opens a new
+    connection and closes it, so it disconnects nothing. Harmless (the real connection is parented
+    to the project); delete it.
+17. Fixture tests suppress `ObjectNotDisposedException` for the Tool Output console editor
+    (`AntlrFixtureTestCase`, `TestUtils`). That's a real leak; release it on project close (15
+    will do it) and drop the suppression.
+18. Small: `RefactorUtils.lexerRuleNameID` is a static counter shared by all projects and never
+    reset (`T__N` numbering); `ParsingUtils.BAD_*_GRAMMAR` statics could be `final`.
+
+### From code review (not fixed yet)
+19. Extract Rule: "replace all" also replaces alternatives of a left-recursive rule, creating
+    mutual left recursion ANTLR rejects (`e : e '*' e | ...` with `e '*' e` elsewhere). Exclude
+    occurrences that start with a reference to their own rule.
+20. Extract Rule: labels inside the selection move into the new rule and break `$x` references
+    in actions; selecting a labelled alternative without its `# label` leaves the rule with a
+    mix of labelled and unlabelled alternatives. (Selection checks now block the partial cases,
+    `x=A`; whole labelled elements still move.)
+21. Extract Rule name dialog accepts ANTLR and target keywords (`grammar`, `fragment`, `class`).
+    Reuse the suggester's reserved set; use `javax.lang.model.SourceVersion.isKeyword` instead of
+    the hand-written Java keyword list.
+22. Extract Rule passes no `PsiFile` to `runWriteCommandAction`, so read-only files throw instead
+    of offering to make them writable (Sort does pass it).
+23. Sort and Extract parse the whole grammar on the EDT (same kind of freeze as commit `50f99b2`).
+    Use `ReadAction.nonBlocking` or modal progress; apply on the EDT.
+24. Sort replaces the whole document, losing caret, folding and scroll; apply as a diff.
+25. Format: with no range feature, Reformat on a selection and reformat-on-save "changed lines
+    only" (the platform default) silently do nothing on `.g4`. Format the whole file or notify.
+26. `plugin.xml` Sort description and `SortRulesAction` javadoc say lexer rules stay in place;
+    `xl.SortRules` moves them after all parser rules (relative order kept).
+27. `build.gradle` xl source set includes both `grammar/ANTLR4.g4` and `src/xl/ANTLR4.g4`; with
+    `-Xexact-output-dir` both generate into one folder and the last one wins. Include exactly one.
+28. Cleanup: `ExtractRuleOccurrences.matchRuns` is quadratic per alternative list;
+    `deepestEnclosing` duplicates `Trees.getRootOfSubtreeEnclosingRegion` (and `ExtractRulePlan`
+    walks the tree twice for the same token); `RefactorUtils.getCharIndexOfNextRuleStart` is dead.
+29. `doc/error2.txt` (stale IDE log) is staged; `doc/error.txt` is untracked. Unstage/delete.
+30. Extract Rule's `update()` can't cheaply check the selection's shape (needs a parse), so the
+    action stays enabled and rejects on invoke with a hint. Revisit if 23 adds a cached parse.

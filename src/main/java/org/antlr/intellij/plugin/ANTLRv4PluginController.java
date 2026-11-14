@@ -249,6 +249,11 @@ public class ANTLRv4PluginController implements ProjectComponent {
 				@Override
 				public void editorCreated(@NotNull EditorFactoryEvent event) {
 					final Editor editor = event.getEditor();
+					// EditorFactory is application-wide: every open project's controller hears this
+					// event, so attach only to this project's editors.
+					if ( editor.getProject()!=project ) {
+						return;
+					}
 					final Document doc = editor.getDocument();
 					VirtualFile vfile = FileDocumentManager.getInstance().getFile(doc);
 					if ( vfile!=null && vfile.getName().endsWith(".g4") ) {
@@ -537,6 +542,10 @@ public class ANTLRv4PluginController implements ProjectComponent {
 
 	public void parseText(final VirtualFile grammarFile, String inputText) {
 		final PreviewState previewState = getPreviewState(grammarFile);
+		// projectClosed() nulls these fields; capture them, and check projectIsClosed before
+		// touching the panel, since the parse finishes later on the EDT.
+		final Project parseProject = project;
+		final PreviewPanel panel = previewPanel;
 
 		// No need to parse empty text during unit tests, yet...
 		if (inputText.isEmpty() && ApplicationManager.getApplication().isUnitTestMode()) return;
@@ -550,15 +559,20 @@ public class ANTLRv4PluginController implements ProjectComponent {
 
 					previewState.parsingResult = ParsingUtils.parseText(
 							previewState.g, previewState.lg, previewState.startRuleName,
-							grammarFile, inputText, project
+							grammarFile, inputText, parseProject
 					);
 
 //					long parseTime_ns = System.nanoTime() - start;
 //					double parseTimeMS = parseTime_ns/(1000.0*1000.0);
 //					System.out.println("PARSE STOP "+Thread.currentThread().getName()+" "+parseTimeMS+"ms");
-					return () -> previewPanel.onParsingCompleted(previewState, System.nanoTime() - start);
+					long parseTime_ns = System.nanoTime() - start;
+					return () -> {
+						if ( !projectIsClosed ) panel.onParsingCompleted(previewState, parseTime_ns);
+					};
 				},
-				() -> previewPanel.notifySlowParsing(),
+				() -> {
+					if ( !projectIsClosed ) panel.notifySlowParsing();
+				},
 				SLOW_PARSE_NOTICE_DELAY_MS,
 				false
 		);
@@ -697,7 +711,10 @@ public class ANTLRv4PluginController implements ProjectComponent {
 		public void contentsChanged(VirtualFileEvent event) {
 			final VirtualFile vfile = event.getFile();
 			if ( !vfile.getName().endsWith(".g4") ) return;
-			if ( !projectIsClosed && !ApplicationManager.getApplication().isUnitTestMode()) {
+			// VirtualFileManager listeners are application-wide: ignore saves of grammars that
+			// aren't open in this project, or another project's save would repaint our preview.
+			if ( projectIsClosed || !FileEditorManager.getInstance(project).isFileOpen(vfile) ) return;
+			if ( !ApplicationManager.getApplication().isUnitTestMode()) {
 				grammarFileSavedEvent(vfile);
 			}
 		}

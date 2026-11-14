@@ -2,6 +2,8 @@ package org.antlr.intellij.plugin.format;
 
 import com.intellij.formatting.service.AsyncDocumentFormattingService;
 import com.intellij.formatting.service.AsyncFormattingRequest;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.psi.PsiFile;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.ANTLRv4Language;
@@ -21,6 +23,7 @@ import java.util.Set;
  */
 public class GrammarFormattingService extends AsyncDocumentFormattingService {
 	public static final String NOTIFICATION_GROUP = "ANTLR Grammar Tools";
+	private static final Logger LOG = Logger.getInstance(GrammarFormattingService.class);
 
 	@Override
 	public boolean canFormat(@NotNull PsiFile file) {
@@ -52,8 +55,15 @@ public class GrammarFormattingService extends AsyncDocumentFormattingService {
 				try {
 					request.onTextReady(Formatter.format(text, width));
 				}
+				catch (ProcessCanceledException e) {
+					throw e;
+				}
 				catch (IllegalStateException e) { // syntax errors
 					request.onError("Cannot format grammar", e.getMessage());
+				}
+				catch (RuntimeException e) { // formatter bug: report it rather than leave the request hanging
+					LOG.warn("antlr4-xl formatter failed", e);
+					request.onError("Cannot format grammar", "Internal formatter error: "+e);
 				}
 			}
 

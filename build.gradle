@@ -46,6 +46,16 @@ intellijPlatform {
             untilBuild = provider { untilBuildOverride ?: null }
         }
     }
+    // Verify against the IDE we build with. Without an explicit list, recommended() falls back
+    // to an ancient release (2020.2.4) because sinceBuild above is left unset.
+    pluginVerification {
+        ides {
+            create(platformType, platformVersion)
+        }
+        // The published ID 'org.antlr.intellij.plugin' predates the "no 'intellij' in IDs" rule
+        // and can't change without orphaning existing installs.
+        freeArgs = ["-mute", "TemplateWordInPluginId"]
+    }
 }
 
 // antlr4-xl (git submodule): grammar tooling -- formatter, rule sorter, later the linter.

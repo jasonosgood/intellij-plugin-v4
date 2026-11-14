@@ -10,6 +10,7 @@ import com.intellij.openapi.editor.SelectionModel;
 import com.intellij.openapi.editor.event.CaretAdapter;
 import com.intellij.openapi.editor.event.CaretEvent;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -98,6 +99,8 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 				);
 		// If someone is typing, keep resetting timer so parsing doesn't start
 		updateQueue.setRestartTimerOnAdd(true);
+		// Disposing the queue drops queued reparses, so none run after the project closes.
+		Disposer.register(project, updateQueue);
 	}
 
 	private void createGUI() {
@@ -467,6 +470,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	}
 
 	public void updateParseTreeFromDoc(VirtualFile grammarFile) {
+		if ( project.isDisposed() ) return;
 		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
 		if ( controller==null ) return;
 		PreviewState previewState = controller.getPreviewState(grammarFile);

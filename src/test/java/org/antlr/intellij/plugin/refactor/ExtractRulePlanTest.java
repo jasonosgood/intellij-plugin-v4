@@ -107,6 +107,42 @@ public class ExtractRulePlanTest {
 		assertNull(plan("grammar T;\na : B ;«  »\n"));
 	}
 
+	@Test
+	public void rejectsSelectionSpanningRules() {
+		assertNull(plan("grammar T;\na : «B ;\nb : C» ;\n"));
+		assertNull(plan("grammar T;\na : B «;\nb» : C ;\n"));
+	}
+
+	@Test
+	public void rejectsRuleNameAndTerminator() {
+		assertNull(plan("grammar T;\n«a» : B ;\n"));
+		assertNull(plan("grammar T;\na : «B ;»\n"));
+		assertNull(plan("grammar T;\na «: B» ;\n"));
+		assertNull(plan("lexer grammar T;\n«A» : 'a' ;\n"));
+	}
+
+	@Test
+	public void rejectsPartialElementsAndAlternatives() {
+		assertNull(plan("grammar T;\nx : y «A | B» z ;\n"));   // would change precedence
+		assertNull(plan("grammar T;\nx : «A» * ;\n"));          // inside A*
+		assertNull(plan("grammar T;\nx : y=«A» ;\n"));          // inside a labelled element
+		assertNull(plan("grammar T;\nx : «A |» B ;\n"));        // dangling |
+	}
+
+	@Test
+	public void acceptsWholeElementsAndAlternatives() {
+		assertEquals("grammar T;\nx : n ;\n\nn : A | B ;\n",
+		             extract("grammar T;\nx : «A | B» ;\n", "n", false));
+		assertEquals("grammar T;\nx : n | C ;\n\nn : A | B ;\n",
+		             extract("grammar T;\nx : «A | B» | C ;\n", "n", false));
+		assertEquals("grammar T;\nx : y (n | C) ;\n\nn : A | B ;\n",
+		             extract("grammar T;\nx : y («A | B» | C) ;\n", "n", false));
+		assertEquals("grammar T;\nx : n # one | C # two ;\n\nn : A B ;\n",
+		             extract("grammar T;\nx : «A B» # one | C # two ;\n", "n", false));
+		assertEquals("lexer grammar T;\nX : N 'b' ;\n\nN : 'a'* ;\n",
+		             extract("lexer grammar T;\nX : «'a'*» 'b' ;\n", "N", false));
+	}
+
 	// ---------------------------------------------------------------------------------
 
 	private static ExtractRulePlan plan(String marked) {

@@ -1,6 +1,9 @@
 package org.antlr.intellij.plugin.preview;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.Key;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.project.Project;
@@ -24,6 +27,9 @@ import org.antlr.v4.tool.LexerGrammar;
  *  for example.
  */
 public class PreviewState {
+	/** Owns the listeners InputPanel adds to an input editor's document; disposed on release. */
+	static final Key<Disposable> INPUT_LISTENER_SCOPE = Key.create("ANTLR_INPUT_LISTENER_SCOPE");
+
 	public Project project;
 	public VirtualFile grammarFile;
 	public Grammar g;
@@ -67,6 +73,10 @@ public class PreviewState {
 		// It would appear that the project closed event occurs before these
 		// close grammars sometimes. Very strange. check for null editor.
 		if (inputEditor != null) {
+			Disposable listenerScope = inputEditor.getUserData(INPUT_LISTENER_SCOPE);
+			if (listenerScope != null) {
+				Disposer.dispose(listenerScope); // removes the input document listener
+			}
 			final EditorFactory factory = EditorFactory.getInstance();
 			factory.releaseEditor(inputEditor);
 			inputEditor = null;

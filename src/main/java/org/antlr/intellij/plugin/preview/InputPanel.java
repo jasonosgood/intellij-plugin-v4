@@ -19,6 +19,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComponentWithBrowseButton;
 import com.intellij.openapi.ui.TextComponentAccessor;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -215,17 +217,24 @@ public class InputPanel {
 	public Editor createPreviewEditor(final VirtualFile grammarFile, Document doc, boolean readOnly) {
 		LOG.info("createEditor: create new editor for "+grammarFile.getPath()+" "+previewPanel.project.getName());
 		final EditorFactory factory = EditorFactory.getInstance();
+		// For file input, doc is the file's shared, IDE-wide Document, which outlives this
+		// editor. Scope the listener to the editor (PreviewState.releaseEditor disposes it),
+		// with the project as backstop, or listeners pile up on each grammar switch and fire
+		// with stale grammars after the editor (or project) is gone.
+		Disposable listenerScope = Disposer.newDisposable(previewPanel.project, "ANTLR preview input listeners");
 		doc.addDocumentListener(
 			new DocumentAdapter() {
 				@Override
 				public void documentChanged(DocumentEvent event) {
 					previewPanel.updateParseTreeFromDoc(grammarFile);
 				}
-			}
+			},
+			listenerScope
 		);
 		final Editor editor = readOnly
 				? factory.createViewer(doc, previewPanel.project)
 				: factory.createEditor(doc, previewPanel.project);
+		editor.putUserData(PreviewState.INPUT_LISTENER_SCOPE, listenerScope);
 		// force right margin
 		((EditorMarkupModel) editor.getMarkupModel()).setErrorStripeVisible(true);
 		EditorSettings settings = editor.getSettings();

@@ -1,5 +1,7 @@
 package org.antlr.intellij.plugin.actions;
 
+import com.intellij.codeInsight.hint.HintManager;
+
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -73,7 +75,8 @@ public class ExtractRuleAction extends AnAction {
 			}
 		}
 
-		// TODO: disable if selection spans rules
+		// The selection's shape (whole elements/alternatives of one rule) needs a parse of the
+		// grammar, so it's checked in actionPerformed, which shows a hint if it's rejected.
 		presentation.setEnabled(true);
 	}
 
@@ -133,7 +136,11 @@ public class ExtractRuleAction extends AnAction {
 		Document doc = editor.getDocument();
 		ExtractRulePlan plan = ExtractRulePlan.create(doc.getText(),
 			selectionModel.getSelectionStart(), selectionModel.getSelectionEnd());
-		if ( plan==null ) return;
+		if ( plan==null ) {
+			HintManager.getInstance().showErrorHint(editor,
+				"Select whole elements or whole alternatives within one rule to extract");
+			return;
+		}
 
 		selectionModel.setSelection(plan.selection.getStartOffset(), plan.selection.getEndOffset());
 		if ( plan.occurrences.size()<=1 ) {

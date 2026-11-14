@@ -6,6 +6,8 @@ import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStream;
 import org.antlr.v4.runtime.misc.Interval;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.Tree;
+import org.antlr.v4.runtime.tree.Trees;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -57,6 +59,36 @@ public final class ExtractRuleOccurrences {
 		}
 
 		return removeOverlaps(found, selection);
+	}
+
+	/**
+	 * True if tokens [startTokenIndex, stopTokenIndex] are exactly a contiguous run of sibling
+	 * units (elements of one alternative, or alternatives of one list), the same shape
+	 * {@link #find} matches occurrences against. Anything else (a rule name, a {@code ;}, part
+	 * of an element such as {@code A} in {@code A*}, part of an alternative, or text spanning
+	 * two rules) can't be replaced by a rule reference without changing or breaking the grammar.
+	 */
+	static boolean isUnitRun(ParserRuleContext tree, int startTokenIndex, int stopTokenIndex) {
+		Tree node = Trees.getRootOfSubtreeEnclosingRegion(tree, startTokenIndex, stopTokenIndex);
+		while ( node instanceof ParserRuleContext && !(node instanceof ANTLRv4Parser.RuleSpecContext) ) {
+			List<? extends ParserRuleContext> units = unitsOf((ParserRuleContext) node);
+			if ( units!=null && spansRun(units, startTokenIndex, stopTokenIndex) ) return true;
+			node = node.getParent();
+		}
+		return false;
+	}
+
+	private static boolean spansRun(List<? extends ParserRuleContext> units, int start, int stop) {
+		boolean started = false;
+		for (ParserRuleContext u : units) {
+			if ( isEmpty(u) ) {
+				if ( started ) return false;
+				continue;
+			}
+			if ( !started && u.getStart().getTokenIndex()==start ) started = true;
+			if ( started && u.getStop().getTokenIndex()==stop ) return true;
+		}
+		return false;
 	}
 
 	private static void collect(ParseTree node, boolean wantLexer, Boolean inLexer,
