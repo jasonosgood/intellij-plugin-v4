@@ -1,11 +1,11 @@
 package org.antlr.intellij.plugin;
 
 import com.intellij.codeInsight.intention.IntentionAction;
-import com.intellij.lang.annotation.Annotation;
 import com.intellij.lang.annotation.AnnotationHolder;
+import com.intellij.lang.annotation.AnnotationBuilder;
 import com.intellij.lang.annotation.ExternalAnnotator;
+import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiFile;
 import org.antlr.intellij.plugin.actions.AnnotationIntentActionsFactory;
@@ -22,22 +22,22 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Optional;
 
-public class ANTLRv4ExternalAnnotator extends ExternalAnnotator<PsiFile, List<GrammarIssue>> {
+public class ANTLRv4ExternalAnnotator extends ExternalAnnotator<GrammarIssuesCollector.Input, List<GrammarIssue>> {
 
-    /** Called first; return file */
+	/** Called first, under a read lock: snapshot what the analysis needs from PSI */
 	@Override
 	@Nullable
-	public PsiFile collectInformation(@NotNull PsiFile file) {
-		return file;
+	public GrammarIssuesCollector.Input collectInformation(@NotNull PsiFile file) {
+		return GrammarIssuesCollector.snapshot(file);
 	}
 
-	/** Called 2nd; run antlr on file */
+	/** Called 2nd, in the background and deliberately without a read lock: run antlr on the
+	 *  snapshot. Holding a read lock here would block typing for as long as ANTLR's analysis runs.
+	 */
 	@Nullable
 	@Override
-	public List<GrammarIssue> doAnnotate(final PsiFile file) {
-		return ApplicationManager.getApplication().runReadAction((Computable<List<GrammarIssue>>) () ->
-				GrammarIssuesCollector.collectGrammarIssues(file)
-		);
+	public List<GrammarIssue> doAnnotate(GrammarIssuesCollector.Input input) {
+		return GrammarIssuesCollector.collectGrammarIssues(input);
 	}
 
     /** Called 3rd */
@@ -62,8 +62,9 @@ public class ANTLRv4ExternalAnnotator extends ExternalAnnotator<PsiFile, List<Gr
 	}
 
 	private void annotateFileIssue(@NotNull PsiFile file, @NotNull AnnotationHolder holder, GrammarIssue issue) {
-		Annotation annotation = holder.createWarningAnnotation(file, issue.getAnnotation());
-		annotation.setFileLevelAnnotation(true);
+		holder.newAnnotation(HighlightSeverity.WARNING, issue.getAnnotation())
+			.fileLevel()
+			.create();
 	}
 
 	private void annotateIssue(@NotNull PsiFile file, @NotNull AnnotationHolder holder, GrammarIssue issue) {
@@ -71,9 +72,7 @@ public class ANTLRv4ExternalAnnotator extends ExternalAnnotator<PsiFile, List<Gr
 			if ( t instanceof CommonToken && tokenBelongsToFile(t, file) ) {
 				TextRange range = getTokenRange((CommonToken) t, file);
 				ErrorSeverity severity = getIssueSeverity(issue);
-
-				Optional<Annotation> annotation = annotate(holder, issue, range, severity);
-				annotation.ifPresent(a -> registerFixForAnnotation(a, issue, file));
+				annotate(holder, issue, range, severity, file);
 			}
 		}
 	}
@@ -114,33 +113,42 @@ public class ANTLRv4ExternalAnnotator extends ExternalAnnotator<PsiFile, List<Gr
 		return true;
 	}
 
-	private Optional<Annotation> annotate(@NotNull AnnotationHolder holder, GrammarIssue issue, TextRange range, ErrorSeverity severity) {
+	private void annotate(@NotNull AnnotationHolder holder, GrammarIssue issue, TextRange range,
+						  ErrorSeverity severity, PsiFile file) {
+		HighlightSeverity highlightSeverity = toHighlightSeverity(severity);
+		if ( highlightSeverity==null ) {
+			return;
+		}
+		AnnotationBuilder builder = holder.newAnnotation(highlightSeverity, issue.getAnnotation()).range(range);
+		Optional<IntentionAction> fix = getFixForIssue(range, issue, file);
+		if ( fix.isPresent() ) {
+			builder = builder.withFix(fix.get());
+		}
+		builder.create();
+	}
+
+	@Nullable
+	private static HighlightSeverity toHighlightSeverity(ErrorSeverity severity) {
 		switch ( severity ) {
 		case ERROR:
 		case ERROR_ONE_OFF:
 		case FATAL:
-			return Optional.of(holder.createErrorAnnotation(range, issue.getAnnotation()));
+			return HighlightSeverity.ERROR;
 
 		case WARNING:
-			return Optional.of(holder.createWarningAnnotation(range, issue.getAnnotation()));
+			return HighlightSeverity.WARNING;
 
 		case WARNING_ONE_OFF:
 		case INFO:
-			/* When trying to remove the deprecation warning, you will need something like this:
-			AnnotationBuilder builder = holder.newAnnotation(HighlightSeverity.WEAK_WARNING, issue.getAnnotation()).range(range);
-			 */
-			return Optional.of(holder.createWeakWarningAnnotation(range, issue.getAnnotation()));
+			return HighlightSeverity.WEAK_WARNING;
 
 		default:
-			break;
+			return null;
 		}
-		return Optional.empty();
 	}
 
-	static void registerFixForAnnotation(Annotation annotation, GrammarIssue issue, PsiFile file) {
-		TextRange textRange = new TextRange(annotation.getStartOffset(), annotation.getEndOffset());
-		Optional<IntentionAction> intentionAction = AnnotationIntentActionsFactory.getFix(textRange, issue.getMsg().getErrorType(), file);
-		intentionAction.ifPresent(annotation::registerFix);
+	static Optional<IntentionAction> getFixForIssue(TextRange range, GrammarIssue issue, PsiFile file) {
+		return AnnotationIntentActionsFactory.getFix(range, issue.getMsg().getErrorType(), file);
 	}
 
 }

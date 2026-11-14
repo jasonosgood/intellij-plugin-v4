@@ -2,6 +2,7 @@ package org.antlr.intellij.plugin.parsing;
 
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -345,8 +346,14 @@ public class ParsingUtils {
 
 	public static GrammarRootAST parseGrammar(Tool antlr, VirtualFile grammarFile) {
 		try {
-			Document document = FileDocumentManager.getInstance().getDocument(grammarFile);
-			String grammarText = document != null ? document.getText() : new String(grammarFile.contentsToByteArray());
+			// Called from the grammar loader thread, so snapshot the editor text under a (short) read lock
+			String grammarText = ReadAction.compute(() -> {
+				Document document = FileDocumentManager.getInstance().getDocument(grammarFile);
+				return document != null ? document.getText() : null;
+			});
+			if ( grammarText == null ) {
+				grammarText = new String(grammarFile.contentsToByteArray());
+			}
 
 			ANTLRStringStream in = new ANTLRStringStream(grammarText);
 			in.name = grammarFile.getPath();

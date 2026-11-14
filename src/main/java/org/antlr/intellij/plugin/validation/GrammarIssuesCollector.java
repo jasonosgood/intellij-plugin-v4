@@ -1,8 +1,8 @@
 package org.antlr.intellij.plugin.validation;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.antlr.runtime.ANTLRReaderStream;
@@ -30,11 +30,52 @@ public class GrammarIssuesCollector {
 
     public static final Logger LOG = Logger.getInstance(GrammarIssuesCollector.class.getName());
 
-    public static List<GrammarIssue> collectGrammarIssues(PsiFile file) {
-        String grammarFileName = file.getVirtualFile().getPath();
+    /** Everything the analysis needs from PSI and project settings, captured under a read
+     *  lock by {@link #snapshot} so that the slow ANTLR run in {@link #collectGrammarIssues}
+     *  can happen without one (the ExternalAnnotator collectInformation/doAnnotate contract).
+     */
+    public static final class Input {
+        final String path;
+        final String name;
+        final String text;
+        final List<String> args;
+        /** null when the user's ANTLR args already specify -lib */
+        @Nullable final String libDirectory;
+
+        Input(String path, String name, String text, List<String> args, @Nullable String libDirectory) {
+            this.path = path;
+            this.name = name;
+            this.text = text;
+            this.args = args;
+            this.libDirectory = libDirectory;
+        }
+    }
+
+    /** Must be called with read access (ExternalAnnotator.collectInformation already has it). */
+    @Nullable
+    public static Input snapshot(PsiFile file) {
+        VirtualFile vfile = file.getVirtualFile();
+        if ( vfile==null ) {
+            LOG.error("doAnnotate no virtual file for "+file);
+            return null;
+        }
+        List<String> args = RunANTLROnGrammarFile.getANTLRArgsAsList(file.getProject(), vfile);
+        String libDirectory = null;
+        if ( !args.contains("-lib") ) {
+            // Fallback only: getANTLRArgsAsList currently always supplies -lib.
+            PsiDirectory dir = file.getContainingDirectory();
+            // Use the directory's real path; PsiDirectory.toString() is "PsiDirectory:<path>", not a path.
+            libDirectory = dir != null ? dir.getVirtualFile().getPath() : null;
+        }
+        return new Input(vfile.getPath(), file.getName(), file.getText(), args, libDirectory);
+    }
+
+    /** Runs the ANTLR tool on a snapshot; touches no PSI, so call it without a read lock. */
+    public static List<GrammarIssue> collectGrammarIssues(Input input) {
+        String grammarFileName = input.path;
         LOG.info("doAnnotate "+grammarFileName);
-        String fileContents = file.getText();
-        List<String> args = RunANTLROnGrammarFile.getANTLRArgsAsList(file.getProject(), file.getVirtualFile());
+        String fileContents = input.text;
+        List<String> args = new ArrayList<>(input.args); // copied: may be modified below
         GrammarIssuesCollectorToolListener listener = new GrammarIssuesCollectorToolListener();
 
         String languageArg = findLanguageArg(args);
@@ -52,11 +93,8 @@ public class GrammarIssuesCollector {
         }
 
         final Tool antlr = new Tool(args.toArray(new String[args.size()]));
-        if ( !args.contains("-lib") ) {
-            // getContainingDirectory() must be identified as a read operation on file system
-            ApplicationManager.getApplication().runReadAction(() -> {
-                antlr.libDirectory = file.getContainingDirectory().toString();
-            });
+        if ( input.libDirectory!=null ) {
+            antlr.libDirectory = input.libDirectory;
         }
 
         antlr.removeListeners();
@@ -64,11 +102,11 @@ public class GrammarIssuesCollector {
         try {
             StringReader sr = new StringReader(fileContents);
             ANTLRReaderStream in = new ANTLRReaderStream(sr);
-            in.name = file.getName();
-            GrammarRootAST ast = antlr.parse(file.getName(), in);
+            in.name = input.name;
+            GrammarRootAST ast = antlr.parse(input.name, in);
             if ( ast==null || ast.hasErrors ) {
                 for (GrammarIssue issue : listener.getIssues()) {
-                    processIssue(file, issue);
+                    processIssue(input.path, issue);
                 }
                 return listener.getIssues();
             }
@@ -81,12 +119,6 @@ public class GrammarIssuesCollector {
                 g.importTokensFromTokensFile();
             }
 
-            VirtualFile vfile = file.getVirtualFile();
-            if ( vfile==null ) {
-                LOG.error("doAnnotate no virtual file for "+file);
-                return listener.getIssues();
-            }
-            g.fileName = vfile.getPath();
             antlr.process(g, false);
 
             Map<String, GrammarAST> unusedRules = getUnusedParserRules(g);
@@ -99,11 +131,11 @@ public class GrammarIssuesCollector {
             }
 
             for (GrammarIssue issue : listener.getIssues()) {
-                processIssue(file, issue);
+                processIssue(input.path, issue);
             }
         }
         catch (Exception e) {
-            LOG.error("antlr can't process "+file.getName(), e);
+            LOG.error("antlr can't process "+input.name, e);
         }
         return listener.getIssues();
     }
@@ -119,8 +151,8 @@ public class GrammarIssuesCollector {
         return null;
     }
 
-    public static void processIssue(final PsiFile file, GrammarIssue issue) {
-        File grammarFile = new File(file.getVirtualFile().getPath());
+    public static void processIssue(final String grammarFilePath, GrammarIssue issue) {
+        File grammarFile = new File(grammarFilePath);
         if ( issue.getMsg() == null || issue.getMsg().fileName==null ) { // weird, issue doesn't have a file associated with it
             return;
         }

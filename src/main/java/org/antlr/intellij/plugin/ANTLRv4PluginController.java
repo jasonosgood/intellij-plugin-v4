@@ -6,6 +6,7 @@ import com.intellij.execution.ui.ConsoleView;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.plugins.PluginManager;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.components.ProjectComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -39,6 +40,7 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
@@ -49,6 +51,7 @@ import org.antlr.v4.parse.ANTLRParser;
 import org.antlr.v4.tool.Grammar;
 import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.TestOnly;
 
 import javax.swing.*;
 import java.io.File;
@@ -56,6 +59,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.function.BooleanSupplier;
 
 /** This object is the controller for the ANTLR plug-in. It receives
  *  events and can send them on to its contained components. For example,
@@ -78,7 +85,7 @@ public class ANTLRv4PluginController implements ProjectComponent {
 	public static final String PREVIEW_WINDOW_ID = "ANTLR Preview";
 	public static final String CONSOLE_WINDOW_ID = "Tool Output";
 
-	public boolean projectIsClosed = false;
+	public volatile boolean projectIsClosed = false;
 
 	public Project project;
 	public ConsoleView console;
@@ -95,6 +102,16 @@ public class ANTLRv4PluginController implements ProjectComponent {
 	private ProgressIndicator parsingProgressIndicator;
 
 	private final Map<String, Long> grammarFileMods = new HashMap<>();
+
+	/** Loading a grammar runs ANTLR's full analysis pipeline, which can take seconds
+	 *  on large grammars, so it must never run on the EDT. All loads run in order on
+	 *  this single background thread; UI follow-ups are posted back to the EDT.
+	 */
+	private final ExecutorService grammarLoader =
+		AppExecutorUtil.createBoundedApplicationPoolExecutor("ANTLR grammar loader", 1);
+
+	/** Latest save-triggered load requested per grammar path; superseded queued loads are skipped. */
+	private final Map<String, Integer> grammarLoadGeneration = new ConcurrentHashMap<>();
 
 	public ANTLRv4PluginController(Project project) {
 		this.project = project;
@@ -285,13 +302,23 @@ public class ANTLRv4PluginController implements ProjectComponent {
 		grammarFileMods.put(grammarFilePath, modCount);
 
 		LOG.info("grammarFileSavedEvent "+grammarFilePath+" "+project.getName());
-		updateGrammarObjectsFromFile(grammarFile, true); // force reload
-		if ( previewPanel!=null ) {
-			previewPanel.grammarFileSaved(grammarFile);
-		}
-		else {
-			LOG.error("grammarFileSavedEvent called before preview panel created");
-		}
+		final Integer generation = grammarLoadGeneration.merge(grammarFilePath, 1, Integer::sum);
+		runGrammarLoad(
+			() -> {
+				if ( !generation.equals(grammarLoadGeneration.get(grammarFilePath)) ) {
+					return false; // a newer save of this file is queued and will reload it
+				}
+				updateGrammarObjectsFromFile(grammarFile, true); // force reload
+				return true;
+			},
+			() -> {
+				if ( previewPanel!=null ) {
+					previewPanel.grammarFileSaved(grammarFile);
+				}
+				else {
+					LOG.error("grammarFileSavedEvent called before preview panel created");
+				}
+			});
 	}
 
 	public void currentEditorFileChangedEvent(VirtualFile oldFile, VirtualFile newFile, boolean modified) {
@@ -319,17 +346,58 @@ public class ANTLRv4PluginController implements ProjectComponent {
 
 		// When switching from a lexer grammar, update its objects in case the grammar was modified.
 		// The updated objects might be needed later by another dependant grammar.
-		if ( oldFile != null && "g4".equals(oldFile.getExtension()) && modified) {
-			updateGrammarObjectsFromFile(oldFile, true);
-		}
+		final boolean reloadOldFile = oldFile != null && "g4".equals(oldFile.getExtension()) && modified;
+		runGrammarLoad(
+			() -> {
+				if ( reloadOldFile ) {
+					updateGrammarObjectsFromFile(oldFile, true);
+				}
+				PreviewState previewState = getPreviewState(newFile);
+				if ( previewState.g==null && previewState.lg==null ) { // only load grammars if none is there
+					updateGrammarObjectsFromFile(newFile, false);
+				}
+				return true;
+			},
+			() -> {
+				if ( previewPanel!=null ) {
+					previewPanel.grammarFileChanged(newFile);
+				}
+			});
+	}
 
-		PreviewState previewState = getPreviewState(newFile);
-		if ( previewState.g==null && previewState.lg==null ) { // only load grammars if none is there
-			updateGrammarObjectsFromFile(newFile, false);
-		}
-		if ( previewPanel!=null ) {
-			previewPanel.grammarFileChanged(newFile);
-		}
+	/** Run {@code load} on the grammar loader thread; if it returns true, run
+	 *  {@code thenOnEdt} on the EDT afterwards. Both are skipped once the project
+	 *  closes or is disposed.
+	 */
+	private void runGrammarLoad(BooleanSupplier load, Runnable thenOnEdt) {
+		final Project loadProject = project; // the field is nulled when the project closes
+		grammarLoader.execute(() -> {
+			if ( projectIsClosed || loadProject.isDisposed() ) return;
+			boolean loaded;
+			try {
+				loaded = load.getAsBoolean();
+			}
+			catch (Throwable t) {
+				if ( !projectIsClosed && !loadProject.isDisposed() ) { // teardown nulls our state mid-load; ignore that
+					LOG.error("Failed to load grammar", t);
+				}
+				return;
+			}
+			if ( !loaded ) return;
+			ApplicationManager.getApplication().invokeLater(() -> {
+				if ( !projectIsClosed ) {
+					thenOnEdt.run();
+				}
+			}, ModalityState.defaultModalityState(), loadProject.getDisposed());
+		});
+	}
+
+	/** Completes once every grammar load queued so far has finished. EDT follow-ups
+	 *  may still be pending; tests should dispatch EDT events afterwards.
+	 */
+	@TestOnly
+	public Future<?> grammarLoadsDone() {
+		return grammarLoader.submit(() -> {});
 	}
 
 	public void mouseEnteredGrammarEditorEvent(VirtualFile vfile, EditorMouseEvent e) {
@@ -540,9 +608,9 @@ public class ANTLRv4PluginController implements ProjectComponent {
 				return stateForCurrentGrammar; // seen this before
 			}
 		}
-		// not seen, must create state
-		PreviewState stateForCurrentGrammar = new PreviewState(project, grammarFile);
-		grammarToPreviewState.put(grammarFileName, stateForCurrentGrammar);
+		// not seen, must create state; atomic because the EDT and the grammar loader both get here
+		PreviewState stateForCurrentGrammar =
+			grammarToPreviewState.computeIfAbsent(grammarFileName, k -> new PreviewState(project, grammarFile));
 
 		return stateForCurrentGrammar;
 	}

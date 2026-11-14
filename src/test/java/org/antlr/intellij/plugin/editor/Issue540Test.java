@@ -8,6 +8,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.VfsTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
@@ -16,6 +17,7 @@ import org.apache.commons.io.FileUtils;
 import org.junit.Test;
 
 import java.io.File;
+import java.util.concurrent.Future;
 
 public class Issue540Test extends BasePlatformTestCase {
 
@@ -63,10 +65,12 @@ public class Issue540Test extends BasePlatformTestCase {
     }
 
     private VirtualFile createAndOpenFile(File file, String contents) {
-        String absPath = file.getAbsolutePath();
-        VfsTestUtil.overwriteTestData(absPath, contents);
-        VirtualFile virtualFile = WriteAction.computeAndWait(() ->
-                LocalFileSystem.getInstance().refreshAndFindFileByPath(absPath));
+        // Write through the VFS, not java.io: the VFS persists between test runs and can hold a stale
+        // record for this path (tearDown deletes the files behind its back), which made the later
+        // save fail with "Unexpected memory-disk conflict".
+        VirtualFile dir = WriteAction.computeAndWait(() ->
+                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file.getParentFile()));
+        VirtualFile virtualFile = VfsTestUtil.createFile(dir, file.getName(), contents);
         myFixture.openFileInEditor(virtualFile);
         return virtualFile;
     }
@@ -83,10 +87,19 @@ public class Issue540Test extends BasePlatformTestCase {
             FileDocumentManager.getInstance().saveDocument(doc);
             if (controller != null) controller.grammarFileSavedEvent(file);
         });
+        waitForGrammarLoads();
     }
 
     private void switchToFile(VirtualFile vf) {
         myFixture.openFileInEditor(vf);
+        waitForGrammarLoads();
+    }
+
+    /** Grammar loading is asynchronous; wait for queued loads and their EDT follow-ups. */
+    private void waitForGrammarLoads() {
+        Future<?> done = ANTLRv4PluginController.getInstance(getProject()).grammarLoadsDone();
+        PlatformTestUtil.waitWithEventsDispatching("grammar loads did not finish", done::isDone, 60);
+        PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
     }
 
     @Override
