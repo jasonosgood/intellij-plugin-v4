@@ -79,10 +79,9 @@
   (a shared fixture base class), which is worth keeping.
 
 ## Backlog
-1. ~~Push antlr4-xl to GitHub as `jasonosgood/antlr4-xl`.~~ Pushed; the submodule commit is on
-   its `main`, and `../antlr4-xl.git` resolves to it. **The repo is private**, so CI's checkout
-   (default `GITHUB_TOKEN`, scoped to this repo) still can't fetch it: make it public, or add a
-   read-only token secret and pass it as `token:` to `actions/checkout` in both workflows.
+1. ~~Push antlr4-xl to GitHub as `jasonosgood/antlr4-xl`.~~ Pushed (private). CI is not a goal:
+   this branch is local and experimental, so CI's failure to fetch the private submodule
+   doesn't matter.
 2. **Extract Rule on lexer rules should create a `fragment`.** Extracting `[0-9]+` from `INT`
    currently creates a new token rule `NEW_RULE`, which changes how the input is tokenized.
 3. **Linter → inspections with quick fixes.** xl's `Finding(Token, rule, message, List<Edit>)`
