@@ -6,28 +6,26 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.SelectionModel;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pass;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.refactoring.IntroduceTargetChooser;
+import com.intellij.refactoring.introduce.inplace.OccurrencesChooser;
 import org.antlr.intellij.plugin.ANTLRv4TokenTypes;
-import org.antlr.intellij.plugin.parser.ANTLRv4Lexer;
 import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
-import org.antlr.intellij.plugin.parsing.ParsingResult;
-import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.psi.LexerRuleRefNode;
 import org.antlr.intellij.plugin.psi.ParserRuleRefNode;
-import org.antlr.intellij.plugin.refactor.RefactorUtils;
-import org.antlr.v4.runtime.Parser;
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStream;
+import org.antlr.intellij.plugin.refactor.ExtractRulePlan;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -35,7 +33,8 @@ import java.util.stream.Stream;
 import static com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction;
 
 /**
- * Extracts an expression to an new parser rule.
+ * Extracts an expression to a new rule, optionally replacing every other
+ * occurrence of the same expression in the grammar.
  */
 public class ExtractRuleAction extends AnAction {
 
@@ -132,53 +131,45 @@ public class ExtractRuleAction extends AnAction {
 
 	private void extractSelection(@NotNull PsiFile psiFile, Editor editor, SelectionModel selectionModel) {
 		Document doc = editor.getDocument();
-		String grammarText = psiFile.getText();
-		ParsingResult results = ParsingUtils.parseANTLRGrammar(grammarText);
-		final Parser parser = results.parser;
-		final ParserRuleContext tree = (ParserRuleContext) results.tree;
-		TokenStream tokens = parser.getTokenStream();
+		ExtractRulePlan plan = ExtractRulePlan.create(doc.getText(),
+			selectionModel.getSelectionStart(), selectionModel.getSelectionEnd());
+		if ( plan==null ) return;
 
-		int selStart = selectionModel.getSelectionStart();
-		int selStop = selectionModel.getSelectionEnd() - 1; // I'm inclusive and they are exclusive for end offset
-
-		// find appropriate tokens for bounds, don't include WS
-		Token start = RefactorUtils.getTokenForCharIndex(tokens, selStart);
-		Token stop = RefactorUtils.getTokenForCharIndex(tokens, selStop);
-		if ( start==null || stop==null ) {
+		selectionModel.setSelection(plan.selection.getStartOffset(), plan.selection.getEndOffset());
+		if ( plan.occurrences.size()<=1 ) {
+			askNameAndExtract(psiFile.getProject(), doc, plan, false);
 			return;
 		}
-		if ( start.getType()==ANTLRv4Lexer.WS ) {
-			start = tokens.get(start.getTokenIndex() + 1);
-		}
-		if ( stop.getType()==ANTLRv4Lexer.WS ) {
-			stop = tokens.get(stop.getTokenIndex() - 1);
-		}
 
-		selectionModel.setSelection(start.getStartIndex(), stop.getStopIndex() + 1);
-		final Project project = psiFile.getProject();
-		final ChooseExtractedRuleName nameChooser = new ChooseExtractedRuleName(project);
+		// Same popup as Introduce Variable: "Replace this occurrence only" / "Replace all N occurrences"
+		Map<OccurrencesChooser.ReplaceChoice, List<TextRange>> choices = new LinkedHashMap<>();
+		choices.put(OccurrencesChooser.ReplaceChoice.NO, Collections.singletonList(plan.selection));
+		choices.put(OccurrencesChooser.ReplaceChoice.ALL, plan.occurrences);
+		new OccurrencesChooser<TextRange>(editor) {
+			@Override
+			protected TextRange getOccurrenceRange(TextRange occurrence) {
+				return occurrence;
+			}
+		}.showChooser(new Pass<OccurrencesChooser.ReplaceChoice>() {
+			@Override
+			public void pass(OccurrencesChooser.ReplaceChoice choice) {
+				askNameAndExtract(psiFile.getProject(), doc, plan, choice.isAll());
+			}
+		}, choices);
+	}
+
+	private void askNameAndExtract(Project project, Document doc, ExtractRulePlan plan, boolean replaceAll) {
+		ChooseExtractedRuleName nameChooser =
+			new ChooseExtractedRuleName(project, plan.suggestedName, plan.lexerRule, plan.existingNames);
 		nameChooser.show();
 		if ( nameChooser.ruleName==null ) return;
 
-		// make new rule string
-		final String ruleText = selectionModel.getSelectedText();
-
-		final int insertionPoint = RefactorUtils.getCharIndexOfNextRuleStart(tree, start.getTokenIndex());
-		final String newRule = "\n" + nameChooser.ruleName + " : " + ruleText + " ;" + "\n";
-
-		runWriteCommandAction(project, () -> {
-			// do all as one operation.
-			if ( insertionPoint >= doc.getTextLength() ) {
-				doc.insertString(doc.getTextLength(), newRule);
+		List<ExtractRulePlan.Edit> edits = plan.edits(nameChooser.ruleName, replaceAll);
+		runWriteCommandAction(project, "Extract Rule", null, () -> {
+			for (ExtractRulePlan.Edit edit : edits) { // last offset first
+				doc.replaceString(edit.range.getStartOffset(), edit.range.getEndOffset(), edit.text);
 			}
-			else {
-				doc.insertString(insertionPoint, newRule);
-			}
-			doc.replaceString(selectionModel.getSelectionStart(), selectionModel.getSelectionEnd(), nameChooser.ruleName);
 		});
-
-		// TODO: only allow selection of fully-formed syntactic entity.
-		// E.g., "A (',' A" is invalid grammatically as a rule.
 	}
 
 }

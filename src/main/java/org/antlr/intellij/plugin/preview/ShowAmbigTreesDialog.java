@@ -8,7 +8,6 @@ import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBPanel;
-import com.intellij.util.ui.UIUtil;
 import org.antlr.intellij.plugin.Utils;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.parsing.PreviewInterpreterRuleContext;
@@ -192,7 +191,7 @@ public class ShowAmbigTreesDialog extends JDialog {
 				if ( i==highlightTreeIndex ) {
 					wrapper.setBackground(JBColor.white);
 				}
-				else if ( UIUtil.isUnderDarcula() ) {
+				else if ( !JBColor.isBright() ) {
 					wrapper.setBackground(Gray._43);
 				}
 				wrapper.add(treeViewers[i], BorderLayout.CENTER);

@@ -1,13 +1,9 @@
 package org.antlr.intellij.plugin.folding;
 
-import com.intellij.codeInsight.folding.CodeFoldingManager;
-import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.FoldRegion;
 import com.intellij.testFramework.EditorTestUtil;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.antlr.intellij.plugin.TestUtils;
-
-import java.lang.reflect.Method;
 
 public class ANTLRv4FoldingBuilderTest extends BasePlatformTestCase {
 
@@ -41,11 +37,6 @@ public class ANTLRv4FoldingBuilderTest extends BasePlatformTestCase {
 	}
 
 	private void buildInitialFoldings() {
-		try {
-			Method method = EditorTestUtil.class.getMethod("buildInitialFoldingsInBackground", Editor.class);
-			method.invoke(null, myFixture.getEditor());
-		} catch (ReflectiveOperationException e) {
-			CodeFoldingManager.getInstance(getProject()).buildInitialFoldings(myFixture.getEditor());
-		}
+		EditorTestUtil.buildInitialFoldingsInBackground(myFixture.getEditor());
 	}
 }

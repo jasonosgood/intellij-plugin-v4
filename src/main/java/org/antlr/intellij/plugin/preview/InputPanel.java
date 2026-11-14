@@ -96,10 +96,9 @@ public class InputPanel {
 		this.previewPanel = previewPanel;
 
 		FileChooserDescriptor singleFileDescriptor =
-			FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor();
+			FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor().withTitle("Select Input File");
 		ComponentWithBrowseButton.BrowseFolderActionListener<JTextField> browseActionListener =
 			new ComponentWithBrowseButton.BrowseFolderActionListener<JTextField>(
-				"Select Input File", null,
 				fileChooser,
 				previewPanel.project,
 				singleFileDescriptor,
@@ -120,7 +119,7 @@ public class InputPanel {
 			onFileChosen(chosenFile);
 		});
 		fileChooser.addActionListener(browseActionListener);
-		fileChooser.getButton().addActionListener(e -> fileRadioButton.setSelected(true));
+		fileChooser.addActionListener(e -> fileRadioButton.setSelected(true)); // listens to the browse button
 		fileChooser.setTextFieldPreferredWidth(40);
 
 		inputRadioButton.addActionListener(e -> selectInputEvent());

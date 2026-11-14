@@ -16,18 +16,16 @@ jobs:
         env:
           # see https://www.jetbrains.com/idea/download/previous.html
           # and https://www.jetbrains.com/intellij-repository/snapshots/
-          - IDEA_VERSION: IC-2022.3 # Oldest supported version
-          - IDEA_VERSION: IC-2023.3.8
-          - IDEA_VERSION: IC-2024.3.7.1
-          - IDEA_VERSION: IU-2025.3.6.1
-          - IDEA_VERSION: IU-2026.2.1
+          - IDEA_VERSION: IU-2026.2.1 # Oldest supported version (since-build 262)
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
         with:
-          java-version: 17
+          submodules: true # antlr4-xl
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: 25
           distribution: temurin
       - name: Build with Gradle
         run: |
@@ -38,4 +36,4 @@ jobs:
         with:
           name: "antlr-intellij-development"
           path: build/distributions/intellij-plugin-v4-*.zip
-        if: matrix.env.IDEA_VERSION == 'IC-2022.3'
+        if: matrix.env.IDEA_VERSION == 'IU-2026.2.1'

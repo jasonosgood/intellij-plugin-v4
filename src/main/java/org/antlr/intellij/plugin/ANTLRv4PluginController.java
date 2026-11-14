@@ -12,7 +12,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.event.EditorFactoryAdapter;
+import com.intellij.openapi.editor.event.EditorFactoryListener;
 import com.intellij.openapi.editor.event.EditorFactoryEvent;
 import com.intellij.openapi.editor.event.EditorMouseAdapter;
 import com.intellij.openapi.editor.event.EditorMouseEvent;
@@ -25,7 +25,6 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.progress.util.BackgroundTaskUtil;
-import com.intellij.openapi.progress.util.ProgressWindow;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
@@ -77,6 +76,9 @@ import java.util.function.BooleanSupplier;
  *  the grammars and editors are consistently associated with the same window.
  */
 public class ANTLRv4PluginController implements ProjectComponent {
+	/** Delay before telling the user that parsing is slow (the platform's progress postpone time). */
+	private static final int SLOW_PARSE_NOTICE_DELAY_MS = 300;
+
 	public static final String PLUGIN_ID = "org.antlr.intellij.plugin";
 
 	public static final Key<GrammarEditorMouseAdapter> EDITOR_MOUSE_LISTENER_KEY = Key.create("EDITOR_MOUSE_LISTENER_KEY");
@@ -156,7 +158,7 @@ public class ANTLRv4PluginController implements ProjectComponent {
 
 		previewPanel = new PreviewPanel(project);
 
-		ContentFactory contentFactory = ContentFactory.SERVICE.getInstance();
+		ContentFactory contentFactory = ContentFactory.getInstance();
 
 		toolWindowManager.invokeLater(() -> {
 			Content content = contentFactory.createContent(previewPanel, "", false);
@@ -243,7 +245,7 @@ public class ANTLRv4PluginController implements ProjectComponent {
 
 		EditorFactory factory = EditorFactory.getInstance();
 		factory.addEditorFactoryListener(
-			new EditorFactoryAdapter() {
+			new EditorFactoryListener() {
 				@Override
 				public void editorCreated(@NotNull EditorFactoryEvent event) {
 					final Editor editor = event.getEditor();
@@ -268,7 +270,8 @@ public class ANTLRv4PluginController implements ProjectComponent {
 						editor.putUserData(EDITOR_MOUSE_LISTENER_KEY, null);
 					}
 				}
-			}
+			},
+			project // removed when the project closes
 		);
 	}
 
@@ -556,7 +559,7 @@ public class ANTLRv4PluginController implements ProjectComponent {
 					return () -> previewPanel.onParsingCompleted(previewState, System.nanoTime() - start);
 				},
 				() -> previewPanel.notifySlowParsing(),
-				ProgressWindow.DEFAULT_PROGRESS_DIALOG_POSTPONE_TIME_MILLIS,
+				SLOW_PARSE_NOTICE_DELAY_MS,
 				false
 		);
 	}

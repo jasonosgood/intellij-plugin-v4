@@ -81,7 +81,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
 
   <!-- please see https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html for description -->
   <!-- can be overriden by the Gradle build if needed -->
-  <idea-version since-build="223"/>
+  <idea-version since-build="262"/>
 
   <!-- please see http://confluence.jetbrains.net/display/IDEADEV/Plugin+Compatibility+with+IntelliJ+Platform+Products
        on how to target different products -->
@@ -133,6 +133,12 @@ For really big files and slow grammars, there is an appreciable delay when displ
 			<keyboard-shortcut keymap="$default" first-keystroke="control alt M"/>
 		    <add-to-group group-id="RefactoringMenu" anchor="after" relative-to-action="antlr.InlineRule"/>
 		</action>
+		<action id="antlr.SortRules"
+			class="org.antlr.intellij.plugin.actions.SortRulesAction"
+			text="Sort Parser Rules"
+			description="Sort parser rules alphabetically; keeps the start rule first and lexer rules in place">
+			<add-to-group group-id="CodeMenu" anchor="after" relative-to-action="ReformatCode"/>
+		</action>
 		<action id="antlr.UniquifyRuleRefs"
 			class="org.antlr.intellij.plugin.actions.UniquifyRuleRefs"
 			text="Make refs to rule unique...">
@@ -141,6 +147,8 @@ For really big files and slow grammars, there is an appreciable delay when displ
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">
+      <formattingService implementation="org.antlr.intellij.plugin.format.GrammarFormattingService"/>
+      <notificationGroup id="ANTLR Grammar Tools" displayType="BALLOON"/>
       <fileTypeFactory implementation="org.antlr.intellij.plugin.ANTLRv4FileTypeFactory"/>
       <lang.syntaxHighlighterFactory language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.ANTLRv4SyntaxHighlighterFactory"/>
       <lang.commenter language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.ANTLRv4Commenter" />

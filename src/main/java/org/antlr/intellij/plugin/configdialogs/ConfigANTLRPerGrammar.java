@@ -55,13 +55,13 @@ public class ConfigANTLRPerGrammar extends DialogWrapper {
 
 	private void initAntlrFields(Project project, String qualFileName) {
 		FileChooserDescriptor dirChooser =
-				FileChooserDescriptorFactory.createSingleFolderDescriptor();
-		outputDirField.addBrowseFolderListener("Select output dir", null, project, dirChooser);
+				FileChooserDescriptorFactory.createSingleFolderDescriptor().withTitle("Select output dir");
+		outputDirField.addBrowseFolderListener(project, dirChooser);
 		outputDirField.setTextFieldPreferredWidth(50);
 
 		dirChooser =
-				FileChooserDescriptorFactory.createSingleFolderDescriptor();
-		libDirField.addBrowseFolderListener("Select lib dir", null, project, dirChooser);
+				FileChooserDescriptorFactory.createSingleFolderDescriptor().withTitle("Select lib dir");
+		libDirField.addBrowseFolderListener(project, dirChooser);
 		libDirField.setTextFieldPreferredWidth(50);
 
 		loadValues(project, qualFileName);
