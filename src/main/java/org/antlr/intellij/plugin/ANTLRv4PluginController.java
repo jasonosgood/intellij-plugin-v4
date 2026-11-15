@@ -1,8 +1,10 @@
 package org.antlr.intellij.plugin;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.AppUIExecutor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -15,11 +17,11 @@ import com.intellij.openapi.editor.event.EditorMouseEvent;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
-import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
-import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.CheckedDisposable;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -32,12 +34,16 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
+import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.antlr.intellij.plugin.preview.PreviewPanel;
 import org.antlr.intellij.plugin.preview.PreviewState;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
+import org.antlr.v4.tool.Grammar;
+import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.concurrency.CancellablePromise;
 import org.jetbrains.annotations.TestOnly;
 
 import java.util.ArrayList;
@@ -45,8 +51,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 /** This object is the controller for the ANTLR plug-in. It receives
@@ -83,8 +92,8 @@ public final class ANTLRv4PluginController implements Disposable {
 	public static final String PREVIEW_WINDOW_ID = "ANTLR Preview";
 	public static final String CONSOLE_WINDOW_ID = "Tool Output";
 
-	/** Set when the project closes; background work and late EDT callbacks check it. */
-	public volatile boolean projectIsClosed = false;
+	/** Disposed with this service: grammar loads and their UI follow-ups expire with it. */
+	private final CheckedDisposable lifetime = Disposer.newCheckedDisposable(this, "ANTLR plugin controller");
 
 	public final Project project;
 	private final ToolOutput console = new ToolOutput();
@@ -102,14 +111,23 @@ public final class ANTLRv4PluginController implements Disposable {
 	@TestOnly
 	public ToolWindow previewWindowForTests;
 
-	private ProgressIndicator parsingProgressIndicator;
+	/** The running or scheduled preview parse; EDT only. */
+	private CancellablePromise<?> parsing;
 
-	/** Loading a grammar runs ANTLR's full analysis pipeline, which can take seconds
-	 *  on large grammars, so it must never run on the EDT. All loads run in order on
-	 *  this single background thread; UI follow-ups are posted back to the EDT.
+	/** Loading a grammar runs ANTLR's full analysis pipeline, which can take seconds on large
+	 *  grammars, so it must never run on the EDT. Loads run in order on this one background
+	 *  thread, so an earlier load never overwrites a later one's grammars.
+	 *  <p>
+	 *  Prior art: the platform's threading guide recommends {@code ReadAction.nonBlocking} for
+	 *  background work; it is not used here because it holds the read lock, and ANTLR's Tool
+	 *  can't be cancelled, so a write action (typing) would wait for the whole load. See
+	 *  {@link GrammarCache}. Parses, which check for cancellation, do use it ({@link #parseText}).
 	 */
 	private final ExecutorService grammarLoader =
 		AppExecutorUtil.createBoundedApplicationPoolExecutor("ANTLR grammar loader", 1);
+
+	/** The latest grammar load, through its UI follow-up. */
+	private volatile CompletableFuture<?> lastGrammarLoad = CompletableFuture.completedFuture(null);
 
 	public ANTLRv4PluginController(Project project) {
 		this.project = project;
@@ -130,7 +148,7 @@ public final class ANTLRv4PluginController implements Disposable {
 	/** Installs listeners. Runs once, on the EDT, when the project opens. */
 	public void projectOpened() {
 		ApplicationManager.getApplication().assertIsDispatchThread();
-		if ( opened || projectIsClosed ) return;
+		if ( opened || lifetime.isDisposed() ) return;
 		opened = true;
 		LOG.info("ANTLR 4 Plugin opened for "+project.getName()+", Java version "+ SystemInfo.JAVA_VERSION);
 		installListeners();
@@ -139,7 +157,7 @@ public final class ANTLRv4PluginController implements Disposable {
 	/** The preview tool window's panel now exists; it detaches itself when disposed. EDT only. */
 	public void attachPreviewPanel(@NotNull PreviewPanel panel) {
 		ApplicationManager.getApplication().assertIsDispatchThread();
-		if ( projectIsClosed ) return;
+		if ( lifetime.isDisposed() ) return;
 		previewPanel = panel;
 		// The current grammar was selected before the panel existed. Replay its selection; if
 		// the platform's own selection event for it is still on its way (startup),
@@ -159,8 +177,7 @@ public final class ANTLRv4PluginController implements Disposable {
 	@Override
 	public void dispose() {
 		LOG.info("dispose " + project.getName());
-		projectIsClosed = true;
-		grammarLoader.shutdownNow();
+		grammarLoader.shutdownNow(); // lifetime, a child, is already disposed
 	}
 
 	// ------------------------------
@@ -304,39 +321,25 @@ public final class ANTLRv4PluginController implements Disposable {
 	}
 
 	/** Run {@code load} on the grammar loader thread; if it returns true, run
-	 *  {@code thenOnEdt} on the EDT afterwards. Both are skipped once the project
-	 *  closes or is disposed.
+	 *  {@code thenOnEdt} on the EDT afterwards. Both are skipped once this service is disposed.
 	 */
 	private void runGrammarLoad(BooleanSupplier load, Runnable thenOnEdt) {
-		if ( projectIsClosed ) return; // the loader is shut down on dispose
-		final Project loadProject = project;
-		grammarLoader.execute(() -> {
-			if ( projectIsClosed || loadProject.isDisposed() ) return;
-			boolean loaded;
-			try {
-				loaded = load.getAsBoolean();
-			}
-			catch (Throwable t) {
-				if ( !projectIsClosed && !loadProject.isDisposed() ) { // teardown nulls our state mid-load; ignore that
-					LOG.error("Failed to load grammar", t);
+		if ( lifetime.isDisposed() ) return; // the loader is shut down
+		AppUIExecutor edt = AppUIExecutor.onUiThread(ModalityState.defaultModalityState()).expireWith(lifetime);
+		lastGrammarLoad = CompletableFuture
+			.supplyAsync(() -> !lifetime.isDisposed() && load.getAsBoolean(), grammarLoader)
+			.thenAcceptAsync(loaded -> { if ( loaded ) thenOnEdt.run(); }, edt::execute)
+			.whenComplete((ignored, t) -> {
+				if ( t!=null && !lifetime.isDisposed() ) { // teardown can break a load midway; ignore that
+					LOG.error("Failed to load grammar", t instanceof CompletionException ? t.getCause() : t);
 				}
-				return;
-			}
-			if ( !loaded ) return;
-			ApplicationManager.getApplication().invokeLater(() -> {
-				if ( !projectIsClosed ) {
-					thenOnEdt.run();
-				}
-			}, ModalityState.defaultModalityState(), loadProject.getDisposed());
-		});
+			});
 	}
 
-	/** Completes once every grammar load queued so far has finished. EDT follow-ups
-	 *  may still be pending; tests should dispatch EDT events afterwards.
-	 */
+	/** Completes once every grammar load requested so far, and its UI follow-up, has finished. */
 	@TestOnly
 	public Future<?> grammarLoadsDone() {
-		return grammarLoader.submit(() -> {});
+		return lastGrammarLoad;
 	}
 
 	public void mouseEnteredGrammarEditorEvent(VirtualFile vfile, EditorMouseEvent e) {
@@ -413,55 +416,61 @@ public final class ANTLRv4PluginController implements Disposable {
 		}
 	}
 
+	/** Parses {@code inputText} with the grammar's start rule in the background and shows the
+	 *  result in the panel. A newer parse cancels this one; disposing the panel cancels it.
+	 *  The parse runs in a non-blocking read action: {@code PreviewParser} checks for
+	 *  cancellation at every decision, so a write action cancels and restarts it rather than
+	 *  waiting for it. Prior art: the platform's threading guide ({@code ReadAction.nonBlocking}
+	 *  with {@code coalesceBy}, {@code expireWith}, {@code finishOnUiThread}).
+	 */
 	public void parseText(final VirtualFile grammarFile, String inputText) {
 		final PreviewState previewState = getPreviewState(grammarFile);
-		// projectClosed() nulls these fields; capture them, and check projectIsClosed before
-		// touching the panel, since the parse finishes later on the EDT.
-		final Project parseProject = project;
 		final PreviewPanel panel = previewPanel;
 		if ( panel==null ) return; // nothing to show the result in
 
 		// No need to parse empty text during unit tests, yet...
 		if (inputText.isEmpty() && ApplicationManager.getApplication().isUnitTestMode()) return;
 
-		// Parse text in a background thread to avoid freezing the UI if the grammar is badly written
-		// and takes forever to interpret the input.
-		parsingProgressIndicator = BackgroundTaskUtil.executeAndTryWait(
-				(indicator) -> {
-//					System.out.println("PARSE START "+Thread.currentThread().getName());
-					long start = System.nanoTime();
+		final Grammar g;
+		final LexerGrammar lg;
+		synchronized (previewState) { // a consistent pair; a load may be replacing them
+			g = previewState.g;
+			lg = previewState.lg;
+		}
+		final String startRuleName = previewState.startRuleName;
+		CancellablePromise<Parse> promise = ReadAction
+			.nonBlocking(() -> {
+				long start = System.nanoTime();
+				ParsingResult result = ParsingUtils.parseText(g, lg, startRuleName, grammarFile, inputText, project);
+				return new Parse(result, System.nanoTime() - start);
+			})
+			.coalesceBy(this, panel) // one parse at a time per panel; the newest input wins
+			.expireWith(panel)
+			.finishOnUiThread(ModalityState.defaultModalityState(), parse -> {
+				previewState.parsingResult = parse.result();
+				panel.onParsingCompleted(previewState, parse.nanos());
+			})
+			.submit(AppExecutorUtil.getAppExecutorService());
+		parsing = promise;
 
-					previewState.parsingResult = ParsingUtils.parseText(
-							previewState.g, previewState.lg, previewState.startRuleName,
-							grammarFile, inputText, parseProject
-					);
-
-//					long parseTime_ns = System.nanoTime() - start;
-//					double parseTimeMS = parseTime_ns/(1000.0*1000.0);
-//					System.out.println("PARSE STOP "+Thread.currentThread().getName()+" "+parseTimeMS+"ms");
-					long parseTime_ns = System.nanoTime() - start;
-					return () -> {
-						if ( !projectIsClosed ) panel.onParsingCompleted(previewState, parseTime_ns);
-					};
-				},
-				() -> {
-					if ( !projectIsClosed ) panel.notifySlowParsing();
-				},
-				SLOW_PARSE_NOTICE_DELAY_MS,
-				false
-		);
+		// Offer the cancel button once the parse is slow (the platform's progress postpone time)
+		AppUIExecutor edt = AppUIExecutor.onUiThread(ModalityState.defaultModalityState()).expireWith(panel);
+		AppExecutorUtil.getAppScheduledExecutorService().schedule(
+			() -> edt.execute(() -> { if ( !promise.isDone() ) panel.notifySlowParsing(); }),
+			SLOW_PARSE_NOTICE_DELAY_MS, TimeUnit.MILLISECONDS);
 	}
 
+	private record Parse(ParsingResult result, long nanos) {}
+
 	public void abortCurrentParsing() {
-		if ( parsingProgressIndicator!=null ) {
-			parsingProgressIndicator.cancel();
-			parsingProgressIndicator = null;
+		if ( parsing!=null && !parsing.isDone() ) {
+			parsing.cancel();
+			parsing = null;
 			if ( previewPanel!=null ) previewPanel.onParsingCancelled();
 		}
 	}
 
 	public void startParsing() {
-		parsingProgressIndicator = null;
 		if (previewPanel == null) return;
 		previewPanel.inputPanel.clearParseErrors(); // Wipes out the console and also any error annotations
 		previewPanel.startParsing();
@@ -575,7 +584,7 @@ public final class ANTLRv4PluginController implements Disposable {
 	private class GrammarSaveListener implements BulkFileListener {
 		@Override
 		public void after(@NotNull List<? extends VFileEvent> events) {
-			if ( projectIsClosed || ApplicationManager.getApplication().isUnitTestMode() ) return;
+			if ( ApplicationManager.getApplication().isUnitTestMode() ) return;
 			for (VFileEvent event : events) {
 				if ( !(event instanceof VFileContentChangeEvent) ) continue;
 				final VirtualFile vfile = ((VFileContentChangeEvent) event).getFile();
@@ -590,7 +599,7 @@ public final class ANTLRv4PluginController implements Disposable {
 
 	/** Editor tab selection changed in this project; called by {@link GrammarEditorTabListener}. */
 	public void editorSelectionChanged(@NotNull FileEditorManagerEvent event) {
-		if ( projectIsClosed ) return;
+		if ( lifetime.isDisposed() ) return;
 		// Switching away from an edited grammar saves it, so grammars using it see the edit.
 		VirtualFile oldFile = event.getOldFile();
 		if ( oldFile!=null && oldFile.isValid() && "g4".equals(oldFile.getExtension()) ) {
@@ -607,7 +616,7 @@ public final class ANTLRv4PluginController implements Disposable {
 
 	/** An editor tab closed in this project; called by {@link GrammarEditorTabListener}. */
 	public void editorFileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
-		if ( !projectIsClosed && source.getSelectedEditor() != null && source.getSelectedEditor().getFile().equals(file) ) {
+		if ( !lifetime.isDisposed() && source.getSelectedEditor() != null && source.getSelectedEditor().getFile().equals(file) ) {
 			editorFileClosedEvent(file);
 		}
 	}

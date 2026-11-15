@@ -191,6 +191,16 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     DECISIONS). Four tests added: a save event with no change keeps the grammars, an unsaved
     edit doesn't reload, moving the grammars keeps the start rule, creating a missing lexer
     makes the parser stale.
+38. Greenfield step 3: platform async. Preview parses run in `ReadAction.nonBlocking`
+    with `coalesceBy` (a new input cancels the running parse; before, superseded parses ran to
+    the end and could finish last), `expireWith(panel)` and `finishOnUiThread`; the cancel
+    button cancels the promise; the slow-parse notice no longer blocks the EDT for 300 ms
+    (`BackgroundTaskUtil.executeAndTryWait` did). Grammar loads stay on the sequential pool
+    executor, without the read lock, and finish through `AppUIExecutor.expireWith`; a
+    `CheckedDisposable` replaces the `projectIsClosed` flag. `grammarLoadsDone` stays as the
+    tests' handle, now the load's own future including its UI follow-up. Two tests added: the
+    newest input wins when parses overlap; breaking the lexer (a token the parser uses renamed)
+    shows as syntax errors in the parser's preview.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

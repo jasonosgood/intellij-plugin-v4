@@ -32,17 +32,8 @@ Found while writing them; decide during steps 2–4 whether to keep each behavio
 ### Step 2. Grammars as cached values of their files: done (see DONE.md, item 37)
 `GrammarCache` keyed by saved text instead of `CachedValuesManager`; see DECISIONS.md.
 
-### Step 3. Platform async in place of the hand-rolled loader
-Today: a single-thread executor, generation counters, `invokeLater`, and `projectIsClosed`
-checks scattered through the controller; preview parses via `BackgroundTaskUtil`.
-- Load and parse with `ReadAction.nonBlocking(…).coalesceBy(file).expireWith(disposable)
-  .finishOnUiThread(…)`. Coalescing drops superseded work; expiring cancels it when the panel
-  or project goes; finishing on the UI thread replaces the manual `invokeLater`.
-- Keep the slow-parse notice and the cancel button (cancel the promise).
-- Remove `projectIsClosed` and `grammarLoadsDone` (tests wait on the promise instead).
-  (`grammarLoadGeneration` went in step 2: the cache makes superseded loads no-ops.)
-- Prior art: the platform's threading model guide; Sort and Extract Rule already use
-  `ReadAction.nonBlocking` (item 23).
+### Step 3. Platform async in place of the hand-rolled loader: done (see DONE.md, item 38)
+Parses use `ReadAction.nonBlocking`; loads don't (they can't be cancelled); see DECISIONS.md.
 
 ### Step 4. Immutable preview state, one owner
 `PreviewState` has public mutable fields shared by the UI thread and the loader, guarded with

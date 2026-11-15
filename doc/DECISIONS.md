@@ -32,4 +32,10 @@ parentheses are item numbers in [DONE.md](DONE.md).
   not editor text, because the preview reloads on save only and the `Tool` reads imports from
   disk. Known gap: a load that fails on a missing import isn't retried when the import is
   created, until the grammar changes or is reopened.
+- **Grammar loads don't use `ReadAction.nonBlocking`; parses do (38).** Same reason as the
+  cache: a non-blocking read action holds the read lock, and the `Tool` can't be cancelled.
+  Loads run in order on one pool thread (so an older load never overwrites a newer one) and
+  finish through `AppUIExecutor.expireWith`. Parses check for cancellation at every decision
+  (`PreviewParser.visitDecisionState`), so they run as non-blocking read actions, coalesced
+  per panel. Prior art: the platform's threading guide.
 - **No CI.** Work is local and experimental; `.github/` is left alone.

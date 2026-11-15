@@ -102,6 +102,20 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertFalse(result.syntaxErrorListener.getSyntaxErrors().isEmpty());
 	}
 
+	/** A new input cancels the parse still running for the previous one; the newest wins. */
+	public void testNewestInputWins() {
+		select(parser);
+		attachPanel();
+		controller.setStartRuleNameEvent(parser, "semver");
+		typeInput("0.0.1");
+		PreviewState state = controller.getPreviewState(parser);
+		controller.parseText(parser, "1.0.0");
+		controller.parseText(parser, "2.0.0");
+		waitFor("reparse", () -> state.parsingResult.tree.getText().startsWith("2.0.0"));
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertTrue(state.parsingResult.tree.getText().startsWith("2.0.0"));
+	}
+
 	public void testChangingStartRuleReparses() {
 		select(parser);
 		attachPanel();
@@ -216,6 +230,24 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertNotNull(controller.getPreviewState(lexer).lg.getRule("TILDE"));
 		select(parser);
 		assertTrue(controller.getPreviewState(parser).lg.tokenNameToTypeMap.containsKey("TILDE"));
+	}
+
+	/** Breaking the lexer (the parser's DOT no longer exists) shows up when parsing with the parser. */
+	public void testBreakingTheLexerShowsInTheParserPreview() {
+		select(parser);
+		attachPanel();
+		controller.setStartRuleNameEvent(parser, "semver");
+		ParsingResult good = typeInput("1.2.3");
+		assertTrue(good.syntaxErrorListener.getSyntaxErrors().isEmpty());
+		select(lexer);
+		editAndSave(lexer, text -> text.replace("DOT  : '.';", "PERIOD : '.';"));
+		PreviewState state = controller.getPreviewState(parser);
+		ParsingResult before = state.parsingResult;
+		select(parser);
+		assertTrue(state.lg.tokenNameToTypeMap.containsKey("PERIOD"));
+		waitFor("reparse", () -> state.parsingResult!=before);
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertFalse(state.parsingResult.syntaxErrorListener.getSyntaxErrors().isEmpty());
 	}
 
 	public void testClosingAGrammarReleasesItsInputEditor() {
