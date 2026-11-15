@@ -35,7 +35,7 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 - `-Pantlr4XlDir=...` builds against another antlr4-xl checkout.
 - Keep Gradle output out of context: run with `-q` or pipe through `tail -30`; on failure, grep
   the report or `build/test-results/test/*.xml` for the failing tests, not the whole log. Read
-  large files (the controller, `idea.log`) by range, not whole.
+  large files (`PreviewPanel`, `InputPanel`, `idea.log`) by range, not whole.
 
 ## Docs
 - [README.md](README.md): features and usage for users.

@@ -5,12 +5,17 @@ import com.intellij.openapi.actionSystem.LangDataKeys;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.editor.CaretModel;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.LogicalPosition;
 import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.ScrollingModel;
 import com.intellij.openapi.editor.markup.MarkupModel;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -23,6 +28,7 @@ import org.antlr.intellij.plugin.psi.ParserRuleSpecNode;
 import org.antlr.intellij.plugin.psi.RuleSpecNode;
 import org.antlr.v4.runtime.atn.DecisionEventInfo;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.awt.event.MouseEvent;
@@ -48,6 +54,23 @@ public class MyActionUtils {
 			return vfile;
 		}
 		return null;
+	}
+
+	/** The grammar in the selected editor tab, or null if the selected file isn't a grammar.
+	 *  With split editors, the most recently focused one.
+	 */
+	public static @Nullable VirtualFile getSelectedGrammarFile(@NotNull Project project) {
+		VirtualFile[] files = FileEditorManager.getInstance(project).getSelectedFiles();
+		if ( files.length==0 || !files[0].getName().endsWith(".g4") ) return null;
+		return files[0];
+	}
+
+	/** An editor showing {@code file} in {@code project}, or null if none is open. */
+	public static @Nullable Editor getEditor(@NotNull Project project, @NotNull VirtualFile file) {
+		Document doc = FileDocumentManager.getInstance().getDocument(file);
+		if ( doc==null ) return null;
+		Editor[] editors = EditorFactory.getInstance().getEditors(doc, project);
+		return editors.length==0 ? null : editors[0];
 	}
 
 	public static int getMouseOffset(MouseEvent mouseEvent, Editor editor) {

@@ -20,7 +20,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.LightweightHint;
 import org.antlr.intellij.adaptor.parser.SyntaxError;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.Icons;
 import org.antlr.intellij.plugin.actions.MyActionUtils;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
@@ -114,7 +113,7 @@ public class InputPanel {
 	/** The current snapshot of the grammar whose input is shown, or null. */
 	public @Nullable PreviewState previewState() {
 		if ( grammarFile==null ) return null;
-		return ANTLRv4PluginController.getInstance(previewPanel.project).getPreviewState(grammarFile);
+		return PreviewService.getInstance(previewPanel.project).getPreviewState(grammarFile);
 	}
 
 	private void createInputEditor() {
@@ -177,7 +176,7 @@ public class InputPanel {
 
 		clearParseErrors();
 
-		String startRule = previewState().startRule();
+		String startRule = PreviewService.getInstance(previewPanel.project).getPreviewState(grammarFile).startRule();
 		if ( startRule!=null ) {
 			setStartRuleName(grammarFile, startRule);
 		}
@@ -510,9 +509,8 @@ public class InputPanel {
 	}
 
 	public void jumpToGrammarPosition(Project project, int start) {
-		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		if ( controller==null || grammarFile==null ) return;
-		final Editor grammarEditor = controller.getEditor(grammarFile);
+		if ( grammarFile==null ) return;
+		final Editor grammarEditor = MyActionUtils.getEditor(project, grammarFile);
 		if ( grammarEditor==null ) return;
 
 		CaretModel caretModel = grammarEditor.getCaretModel();
@@ -633,7 +631,7 @@ public class InputPanel {
 			b = offendingToken.getStopIndex()+1;
 		}
 
-		// ANTLRv4PluginController.parseText() can be slow and is done lazily. That means it
+		// PreviewService.parse() can be slow and is done lazily. That means it
 		// is possible to parse and get error messages that are no longer appropriate because
 		// the user has started altering the input after the parse was kicked off; another parse
 		// will follow up and change the error messages and location of annotations in this input panel.

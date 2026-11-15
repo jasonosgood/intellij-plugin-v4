@@ -7,7 +7,6 @@ import com.intellij.psi.PsiNamedElement;
 import com.intellij.refactoring.listeners.RefactoringElementAdapter;
 import com.intellij.refactoring.listeners.RefactoringElementListener;
 import com.intellij.refactoring.listeners.RefactoringElementListenerProvider;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.psi.ParserRuleSpecNode;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -26,23 +25,23 @@ public class StartRuleRenameListenerProvider implements RefactoringElementListen
 		PsiFile psiFile = rule.getContainingFile();
 		VirtualFile file = psiFile==null ? null : psiFile.getVirtualFile();
 		if ( file==null ) return null;
-		// Only if the preview is in use; don't create the controller for a rename
-		ANTLRv4PluginController controller = element.getProject().getServiceIfCreated(ANTLRv4PluginController.class);
-		if ( controller==null ) return null;
+		// Only if the preview is in use; don't create the service for a rename
+		PreviewService preview = element.getProject().getServiceIfCreated(PreviewService.class);
+		if ( preview==null ) return null;
 		String oldName = rule.getName();
-		if ( oldName==null || !controller.getPreviewState(file).isStartRule(oldName) ) return null;
+		if ( oldName==null || !preview.getPreviewState(file).isStartRule(oldName) ) return null;
 
 		return new RefactoringElementAdapter() {
 			@Override
 			protected void elementRenamedOrMoved(@NotNull PsiElement newElement) {
 				if ( newElement instanceof PsiNamedElement named && named.getName()!=null ) {
-					controller.startRuleRenamed(file, named.getName());
+					preview.startRuleRenamed(file, named.getName());
 				}
 			}
 
 			@Override
 			public void undoElementMovedOrRenamed(@NotNull PsiElement newElement, @NotNull String oldQualifiedName) {
-				controller.startRuleRenamed(file, oldName);
+				preview.startRuleRenamed(file, oldName);
 			}
 		};
 	}

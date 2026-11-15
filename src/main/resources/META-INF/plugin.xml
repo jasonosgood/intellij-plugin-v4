@@ -102,7 +102,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
   <!-- uncomment to enable plugin in all products -->
   <depends>com.intellij.modules.lang</depends>
 
-  <!-- ANTLRv4PluginController is a light project service (@Service), so it isn't listed here. -->
+  <!-- PreviewService, GrammarCache and ToolOutput are light project services (@Service), so they aren't listed here. -->
   <projectListeners>
     <listener class="org.antlr.intellij.plugin.GrammarEditorTabListener"
               topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
@@ -158,7 +158,6 @@ For really big files and slow grammars, there is an appreciable delay when displ
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">
-      <postStartupActivity implementation="org.antlr.intellij.plugin.ANTLRv4StartupActivity"/>
       <toolWindow id="ANTLR Preview" anchor="bottom" canCloseContents="true"
                   icon="/icons/org/antlr/intellij/plugin/toolWindowAntlr.svg"
                   factoryClass="org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory"/>

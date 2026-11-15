@@ -16,7 +16,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
+import org.antlr.intellij.plugin.preview.PreviewService;
 import org.antlr.intellij.plugin.format.GrammarFormattingService;
 import org.antlr.intellij.plugin.format.TextDiffs;
 import org.jetbrains.annotations.NotNull;
@@ -60,7 +60,7 @@ public class SortRulesAction extends AnAction {
 		Document doc = editor.getDocument();
 		// Keep the preview's start rule first, if one is chosen; else the first parser rule
 		String startRule = file.getVirtualFile()==null ? null
-			: ANTLRv4PluginController.getInstance(project).getPreviewState(file.getVirtualFile()).startRule();
+			: PreviewService.getInstance(project).getPreviewState(file.getVirtualFile()).startRule();
 		ReadAction.nonBlocking(() -> sort(doc.getText(), startRule))
 			.expireWhen(() -> project.isDisposed() || editor.isDisposed())
 			.finishOnUiThread(ModalityState.current(), result -> {

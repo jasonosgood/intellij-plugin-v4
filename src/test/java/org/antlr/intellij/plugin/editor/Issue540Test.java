@@ -10,7 +10,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.VfsTestUtil;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
+import org.antlr.intellij.plugin.preview.PreviewService;
 import org.apache.commons.io.FileUtils;
 import org.junit.Test;
 
@@ -29,7 +29,7 @@ public class Issue540Test extends AntlrFixtureTestCase {
         // Create files and controller
         VirtualFile lexerFile = createAndOpenFile(LEXER_FILE, "lexer grammar TestLexer;\nTOKEN1: 'TOKEN1';");
         VirtualFile parserFile = createAndOpenFile(PARSER_FILE, "parser grammar TestParser;\noptions {tokenVocab=TestLexer;}\nstartRule: TOKEN1;");
-        ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(getProject());
+        PreviewService controller = PreviewService.getInstance(getProject());
 
         // No tokens should be created yet
         assertFalse(TOKENS_FILE.exists());
@@ -77,13 +77,13 @@ public class Issue540Test extends AntlrFixtureTestCase {
         return getTestDataPath() + "gen/";
     }
 
-    private void addLineToCurrentFile(String line, VirtualFile file, ANTLRv4PluginController controller) {
+    private void addLineToCurrentFile(String line, VirtualFile file, PreviewService controller) {
         ApplicationManager.getApplication().runWriteAction(() -> {
             Document doc = myFixture.getEditor().getDocument();
             doc.setText(doc.getText() + "\n" + line);
             PsiDocumentManager.getInstance(getProject()).commitDocument(doc);
             FileDocumentManager.getInstance().saveDocument(doc);
-            if (controller != null) controller.grammarFileSavedEvent(file);
+            if (controller != null) controller.grammarSaved(file);
         });
         waitForGrammarLoads();
     }
@@ -95,7 +95,7 @@ public class Issue540Test extends AntlrFixtureTestCase {
 
     /** Grammar loading is asynchronous; wait for queued loads and their EDT follow-ups. */
     private void waitForGrammarLoads() {
-        Future<?> done = ANTLRv4PluginController.getInstance(getProject()).grammarLoadsDone();
+        Future<?> done = PreviewService.getInstance(getProject()).grammarLoadsDone();
         PlatformTestUtil.waitWithEventsDispatching("grammar loads did not finish", done::isDone, 60);
         PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
     }

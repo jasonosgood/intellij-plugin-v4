@@ -11,7 +11,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Objects;
 
 /** What the preview knows about one grammar file: its grammars, the start rule, and the
- *  result of the last parse. Immutable: the controller replaces a grammar's snapshot whole, on
+ *  result of the last parse. Immutable: {@link PreviewService} replaces a grammar's snapshot whole, on
  *  the EDT, and anyone may keep one (a background parse, the profiler) and read it later from
  *  any thread, seeing grammars, start rule and parse result that belong together.
  *  <p>

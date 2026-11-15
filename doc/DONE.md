@@ -223,6 +223,21 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     the loaded grammar still has the old name. Undo restores the old name. Two tests added. In
     light tests a rename can't update references (the grammars are outside the project), so the
     tests rename `semver`, which nothing refers to.
+41. Greenfield step 5: the controller is split into services; the UI subscribes to a topic.
+    `ANTLRv4PluginController` and `ANTLRv4StartupActivity` are deleted. `PreviewService`
+    (project service) holds the preview states and start rules, runs parses and handles grammar
+    selection, save and close; it publishes `PreviewListener.TOPIC` events (grammar selected,
+    reloaded, closed, deselected; start rule changed; parse slow, completed, cancelled) and never
+    calls the UI. `PreviewPanel` subscribes with itself as disposable and, when created, asks for
+    the selected grammar (replaces `attachPreviewPanel` and the replay bookkeeping; the startup
+    selection may now switch the panel twice, harmlessly). `GrammarCache` owns the loader thread
+    (`submit`). `ToolOutput` is a project service. `GrammarEditorTabListener` holds the editor
+    glue (save on tab switch, hide on close). Grammar-editor clicks for the profiler go through
+    the `EditorFactory` event multicaster, scoped to the panel, instead of per-editor listeners.
+    The VFS save listener is subscribed by the service. Auto-refresh is a service flag the
+    annotator reads. Fixed on the way: a reload now refreshes the grammar shown, not the saved
+    one (a save of a grammar not shown parsed the shown input with the wrong grammar). Plan
+    deviation: input text stays with the panel (step 4), not the preview service.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

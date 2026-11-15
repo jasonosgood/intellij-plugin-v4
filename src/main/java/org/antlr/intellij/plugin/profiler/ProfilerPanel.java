@@ -14,7 +14,7 @@ import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
+import org.antlr.intellij.plugin.actions.MyActionUtils;
 import org.antlr.intellij.plugin.preview.InputPanel;
 import org.antlr.intellij.plugin.preview.PreviewPanel;
 import org.antlr.intellij.plugin.preview.PreviewState;
@@ -175,9 +175,7 @@ public class ProfilerPanel {
 	}
 
 	public void selectDecisionInGrammar(PreviewState previewState, int decision) {
-		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		if ( controller==null ) return;
-		final Editor grammarEditor = controller.getEditor(previewState.grammarFile());
+		final Editor grammarEditor = MyActionUtils.getEditor(project, previewState.grammarFile());
 		if ( grammarEditor==null ) return;
 
 		DecisionState decisionState = previewState.parserGrammar().atn.getDecisionState(decision);

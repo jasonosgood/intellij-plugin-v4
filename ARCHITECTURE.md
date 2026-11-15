@@ -64,14 +64,20 @@ not be executed: `@members`, actions, predicates...
 The entry point for the preview window is `PreviewPanel`, which holds the main
 Swing component displayed in the tool window. `ANTLRv4ToolWindowFactory` creates
 it, and the console, when the tool window is first shown; each is disposed with
-its tool window content and owns its editors. `ANTLRv4PluginController` (a project
-service) holds only model state: per-grammar preview state (`PreviewState`, an
-immutable snapshot of grammars, start rule and parse result, replaced on the EDT), keyed
-by `VirtualFile`, and tool output (`ToolOutput`, buffered until the console exists). Loaded grammars
-come from `GrammarCache` (a project service): an entry per grammar file stays valid
-while the saved text of every file its load read (the grammar, its lexer, its
-imports) is unchanged, so a save reloads exactly the open grammars it affects.
-Loads run off the EDT, without a read lock (see the class comment). Everytime the
+its tool window content and owns its editors. The model is in three project
+services, which never call the UI:
+- `PreviewService` holds per-grammar preview state (`PreviewState`, an immutable
+  snapshot of grammars, start rule and parse result, replaced on the EDT), keyed by
+  `VirtualFile`, and runs parses. It publishes what happens on the project message
+  bus (`PreviewListener.TOPIC`); `PreviewPanel` subscribes with its own disposable.
+- `GrammarCache` loads grammars, in order on one background thread without a read lock,
+  and caches them: an entry per grammar file stays valid while the saved text of
+  every file its load read (the grammar, its lexer, its imports) is unchanged, so a
+  save reloads exactly the open grammars it affects.
+- `ToolOutput` buffers the Tool Output console's text until the console exists.
+
+Editor tab events arrive through `GrammarEditorTabListener` (declared in plugin.xml),
+which turns them into `PreviewService` calls. Everytime the
 editor switches to another .g4 grammar, the preview is updated accordingly:
 the input editor is replaced (`InputPanel` keeps one, and the input text per grammar),
 the input text and selected rule are restored to their previous state (if any),

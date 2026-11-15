@@ -1,9 +1,11 @@
 package org.antlr.intellij.plugin.parsing;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.antlr.v4.tool.Grammar;
 import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
@@ -13,9 +15,14 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
-/** Loaded grammars per grammar file, valid while the saved text of every file the load read
+/** The grammar service: loads grammars, in order, on one background thread, and caches the
+ *  loaded grammars per grammar file, valid while the saved text of every file the load read
  *  is unchanged: the grammar, its lexer (by {@code tokenVocab} or by name, including one looked
  *  for but absent) and its imports.
  *  <p>
@@ -31,11 +38,17 @@ import java.util.concurrent.ConcurrentHashMap;
  *  Texts are saved texts, not editor text: the preview reloads on save only
  *  (doc/IN_PROGRESS.md), and the ANTLR Tool reads imports from disk anyway.
  *  <p>
- *  Threads: {@link #get} loads, so call it off the EDT (the controller's grammar loader). The
+ *  Threads: {@link #get} loads, so call it off the EDT, normally through {@link #submit}. The
  *  map is concurrent; a grammar loaded twice at once just stores the later result.
+ *  <p>
+ *  Loading runs ANTLR's full analysis, seconds on large grammars, so it never runs on the EDT.
+ *  Loads run in order on one thread, so an earlier load never overwrites a later one's result.
+ *  Prior art: the platform's threading guide recommends {@code ReadAction.nonBlocking} for
+ *  background work; not used here because it holds the read lock and ANTLR's Tool can't be
+ *  cancelled, so a write action (typing) would wait for the whole load (see DECISIONS.md).
  */
 @Service(Service.Level.PROJECT)
-public final class GrammarCache {
+public final class GrammarCache implements Disposable {
 	/** The grammars loaded from a file; either may be null (lexer alone, or a failed load).
 	 *  {@code inputs}: path of every file read to saved text, null for a file that was absent.
 	 */
@@ -47,6 +60,8 @@ public final class GrammarCache {
 
 	private final Project project;
 	private final Map<VirtualFile, Loaded> entries = new ConcurrentHashMap<>();
+	private final ExecutorService loader =
+		AppExecutorUtil.createBoundedApplicationPoolExecutor("ANTLR grammar loader", 1);
 
 	public GrammarCache(Project project) {
 		this.project = project;
@@ -54,6 +69,23 @@ public final class GrammarCache {
 
 	public static GrammarCache getInstance(Project project) {
 		return project.getService(GrammarCache.class);
+	}
+
+	/** Runs {@code work} (which loads grammars with {@link #get}) on the grammar loader thread,
+	 *  after all work submitted before it. Completes with null if the project is closing.
+	 */
+	public <T> CompletableFuture<T> submit(@NotNull Supplier<T> work) {
+		try {
+			return CompletableFuture.supplyAsync(work, loader);
+		}
+		catch (RejectedExecutionException closing) {
+			return CompletableFuture.completedFuture(null);
+		}
+	}
+
+	@Override
+	public void dispose() {
+		loader.shutdownNow();
 	}
 
 	/** The grammars loaded from {@code file}: the cached ones if still fresh, else loaded now. */

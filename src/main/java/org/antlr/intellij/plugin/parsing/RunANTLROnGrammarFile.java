@@ -24,7 +24,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.antlr.intellij.adaptor.lexer.RuleIElementType;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.ANTLRv4TokenTypes;
 import org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarProperties;
 import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
@@ -148,7 +147,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 		Tool antlr = new Tool(args.toArray(new String[args.size()]));
 
-		ToolOutput console = ANTLRv4PluginController.getInstance(project).getConsole();
+		ToolOutput console = ToolOutput.getInstance(project);
 		String timeStamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Calendar.getInstance().getTime());
 		console.print(timeStamp+": antlr4 "+Misc.join(args.iterator(), " ")+"\n", ConsoleViewContentType.SYSTEM_OUTPUT);
 		antlr.removeListeners();
@@ -174,7 +173,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 		}
 
 		if ( listener.hasOutput ) {
-			ANTLRv4PluginController.showConsoleWindow(project);
+			ToolOutput.showWindow(project);
 		}
 	}
 

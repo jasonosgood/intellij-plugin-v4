@@ -16,7 +16,10 @@ import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
+import org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory;
+import org.antlr.intellij.plugin.preview.PreviewService;
 import org.antlr.intellij.plugin.psi.ParserRuleRefNode;
 import org.jetbrains.annotations.NotNull;
 
@@ -99,8 +102,8 @@ public class TestRuleAction extends AnAction implements DumbAware {
 
 		LOG.info("actionPerformed "+grammarFile);
 
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(e.getProject());
-		controller.getPreviewWindow().show(null);
+		ToolWindow previewWindow = ToolWindowManager.getInstance(e.getProject()).getToolWindow(ANTLRv4ToolWindowFactory.PREVIEW_WINDOW_ID);
+		if ( previewWindow!=null ) previewWindow.show(null);
 
 		ParserRuleRefNode r = MyActionUtils.getParserRuleSurroundingRef(e);
 		if ( r==null ) {
@@ -113,7 +116,7 @@ public class TestRuleAction extends AnAction implements DumbAware {
 			docMgr.saveDocument(doc);
 		}
 
-		controller.setStartRuleNameEvent(grammarFile, ruleName);
+		PreviewService.getInstance(e.getProject()).setStartRule(grammarFile, ruleName);
 	}
 
 }

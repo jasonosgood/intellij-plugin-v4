@@ -1,14 +1,19 @@
 package org.antlr.intellij.plugin;
 
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
+import org.antlr.intellij.plugin.preview.PreviewService;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Forwards this project's editor tab events to its {@link ANTLRv4PluginController}.
+ * Turns this project's editor tab events into preview events ({@link PreviewService}).
  * Declared under {@code <projectListeners>} in plugin.xml, so the platform subscribes one
  * per project before any editor opens and unsubscribes it when the project closes.
  */
@@ -21,17 +26,40 @@ public final class GrammarEditorTabListener implements FileEditorManagerListener
 
 	@Override
 	public void selectionChanged(@NotNull FileEditorManagerEvent event) {
-		ANTLRv4PluginController controller = controller();
-		if ( controller!=null ) controller.editorSelectionChanged(event);
+		if ( project.isDisposed() ) return;
+		// Switching away from an edited grammar saves it, so grammars using it see the edit.
+		VirtualFile oldFile = event.getOldFile();
+		if ( oldFile!=null && oldFile.isValid() && "g4".equals(oldFile.getExtension()) ) {
+			PsiDocumentManager psiMgr = PsiDocumentManager.getInstance(project);
+			FileDocumentManager docMgr = FileDocumentManager.getInstance();
+			Document doc = docMgr.getDocument(oldFile);
+			if ( doc!=null && (!psiMgr.isCommitted(doc) || docMgr.isDocumentUnsaved(doc)) ) {
+				psiMgr.commitDocument(doc);
+				docMgr.saveDocument(doc);
+			}
+		}
+
+		VirtualFile newFile = event.getNewFile();
+		if ( newFile==null ) return; // all files closed
+		String ext = newFile.getExtension();
+		if ( "g".equals(ext) ) { // ANTLR 3: the preview can't show it
+			PreviewService.getInstance(project).grammarDeselected();
+		}
+		else if ( "g4".equals(ext) ) {
+			PreviewService.getInstance(project).grammarSelected(newFile);
+		}
 	}
 
 	@Override
 	public void fileClosed(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
-		ANTLRv4PluginController controller = controller();
-		if ( controller!=null ) controller.editorFileClosed(source, file);
-	}
-
-	private ANTLRv4PluginController controller() {
-		return project.isDisposed() ? null : ANTLRv4PluginController.getInstance(project);
+		if ( project.isDisposed() ) return;
+		FileEditor selected = source.getSelectedEditor();
+		if ( selected==null || !file.equals(selected.getFile()) ) return; // only the selected file's tab
+		if ( "g4".equals(file.getExtension()) ) {
+			PreviewService.getInstance(project).grammarClosed(file);
+		}
+		else {
+			PreviewService.getInstance(project).grammarDeselected();
+		}
 	}
 }

@@ -7,7 +7,13 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.SelectionModel;
+import com.intellij.openapi.editor.event.EditorMouseEvent;
+import com.intellij.openapi.editor.event.EditorMouseListener;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.editor.event.CaretListener;
 import com.intellij.openapi.editor.event.CaretEvent;
 import com.intellij.openapi.project.Project;
@@ -20,7 +26,7 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
+import org.antlr.intellij.plugin.actions.MyActionUtils;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.PreviewParser;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
@@ -34,6 +40,7 @@ import org.antlr.v4.runtime.tree.TerminalNodeImpl;
 import org.antlr.v4.runtime.tree.Tree;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import javax.swing.*;
 import java.awt.*;
@@ -44,13 +51,15 @@ import java.util.Collections;
 
 import static com.intellij.icons.AllIcons.Actions.Find;
 import static com.intellij.icons.AllIcons.General.AutoscrollFromSource;
-import static org.antlr.intellij.plugin.ANTLRv4PluginController.PREVIEW_WINDOW_ID;
+import static org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory.PREVIEW_WINDOW_ID;
 
 /** The top level contents of the preview tool window, created by
  *  {@link org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory} and disposed with the tool
  *  window content. It owns the input editor and everything registered on it, and the input
  *  text per grammar ({@link InputPanel}); the grammars, start rules and parse results it shows
- *  are immutable {@link PreviewState} snapshots the controller keeps.
+ *  are immutable {@link PreviewState} snapshots {@link PreviewService} keeps. It subscribes to
+ *  the service's {@link PreviewListener#TOPIC} with itself as parent disposable, so it stops
+ *  hearing events when its tool window content goes; the service never calls it.
  */
 public class PreviewPanel extends JPanel implements ParsingResultSelectionListener, Disposable {
 	//com.apple.eawt stuff stopped working correctly in java 7 and was only recently fixed in java 9;
@@ -70,11 +79,6 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	public HierarchyViewer hierarchyViewer;
 
 	public ProfilerPanel profilerPanel;
-
-	/**
-	 * Indicates if the preview should be automatically refreshed after grammar changes.
-	 */
-	private boolean autoRefresh = true;
 
 	private boolean scrollFromSource = false;
 	private boolean highlightSource = false;
@@ -100,13 +104,92 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		updateQueue.setRestartTimerOnAdd(true);
 		// Disposing the queue drops queued reparses, so none run after the panel is gone.
 		Disposer.register(this, updateQueue);
+
+		project.getMessageBus().connect(this).subscribe(PreviewListener.TOPIC, new PreviewEvents());
+		// Clicks in a grammar editor clear the profiler's decision highlights there
+		EditorFactory.getInstance().getEventMulticaster().addEditorMouseListener(new EditorMouseListener() {
+			@Override
+			public void mouseClicked(@NotNull EditorMouseEvent e) {
+				if ( e.getEditor().getProject()!=project ) return;
+				VirtualFile vfile = FileDocumentManager.getInstance().getFile(e.getEditor().getDocument());
+				if ( vfile!=null && vfile.getName().endsWith(".g4") ) {
+					profilerPanel.mouseEnteredGrammarEditorEvent(vfile, e);
+				}
+			}
+		}, this);
+
+		// The current grammar was selected before this panel existed
+		VirtualFile selected = MyActionUtils.getSelectedGrammarFile(project);
+		if ( selected!=null ) {
+			PreviewService.getInstance(project).grammarSelected(selected);
+		}
 	}
 
-	/** Releases the input editor; the controller keeps the per-grammar state. */
+	/** Releases the input editor; the service keeps the per-grammar state. */
 	@Override
 	public void dispose() {
-		project.getService(ANTLRv4PluginController.class).detachPreviewPanel(this);
 		inputPanel.releaseEditor();
+	}
+
+	/** Tests can substitute the preview tool window; null means look it up. */
+	@TestOnly
+	public ToolWindow previewWindowForTests;
+
+	private @Nullable ToolWindow getPreviewWindow() {
+		if ( previewWindowForTests!=null ) return previewWindowForTests;
+		return ToolWindowManager.getInstance(project).getToolWindow(PREVIEW_WINDOW_ID);
+	}
+
+	/** Events from {@link PreviewService}, on the EDT. */
+	private class PreviewEvents implements PreviewListener {
+		@Override
+		public void grammarSelected(@NotNull VirtualFile grammarFile) {
+			switchToGrammar(grammarFile);
+		}
+
+		@Override
+		public void grammarReloaded(@NotNull VirtualFile grammarFile) {
+			// the reload may include the grammar shown (the saved one, or one using it)
+			VirtualFile shown = inputPanel.getGrammarFile();
+			if ( shown!=null ) refreshGrammar(shown);
+		}
+
+		@Override
+		public void startRuleChanged(@NotNull VirtualFile grammarFile) {
+			if ( !grammarFile.equals(inputPanel.getGrammarFile()) ) return;
+			inputPanel.setStartRuleName(grammarFile, PreviewService.getInstance(project).getPreviewState(grammarFile).startRule());
+			updateParseTreeFromDoc(grammarFile);
+		}
+
+		@Override
+		public void grammarClosed(@NotNull VirtualFile grammarFile) {
+			closeGrammar(grammarFile);
+		}
+
+		@Override
+		public void grammarDeselected() {
+			setEnabled(false);
+			ToolWindow window = getPreviewWindow();
+			if ( window!=null ) window.hide(null);
+		}
+
+		@Override
+		public void parseSlow() {
+			cancelParserAction.setEnabled(true);
+			buttonBar.updateActionsAsync();
+		}
+
+		@Override
+		public void parseCompleted(@NotNull PreviewState state, long nanos) {
+			onParsingCompleted(state, nanos);
+		}
+
+		@Override
+		public void parseCancelled() {
+			cancelParserAction.setEnabled(false);
+			buttonBar.updateActionsAsync();
+			showError("Parsing was aborted");
+		}
 	}
 
 	private void createGUI() {
@@ -139,12 +222,12 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 			@Override
 			public boolean isSelected(@NotNull AnActionEvent e) {
-				return autoRefresh;
+				return PreviewService.getInstance(project).isAutoRefresh();
 			}
 
 			@Override
 			public void setSelected(@NotNull AnActionEvent e, boolean state) {
-				autoRefresh = state;
+				PreviewService.getInstance(project).setAutoRefresh(state);
 			}
 
 			@Override
@@ -234,9 +317,6 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		return new InputPanel(this);
 	}
 
-	public ProfilerPanel getProfilerPanel() {
-		return profilerPanel;
-	}
 
 	private JTabbedPane createParseTreeAndProfileTabbedPanel() {
 		JBTabbedPane tabbedPane = new JBTabbedPane();
@@ -310,11 +390,10 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		return scaleSlider;
 	}
 
-	/** Notify the preview tool window contents that the grammar file has changed */
-	public void grammarFileSaved(VirtualFile grammarFile) {
-		String grammarFileName = grammarFile.getPath();
-		LOG.info("grammarFileSaved " + grammarFileName+" "+project.getName());
-		PreviewState previewState = ANTLRv4PluginController.getInstance(project).getPreviewState(grammarFile);
+	/** The shown grammar was reloaded: show its start rule and reparse. */
+	private void refreshGrammar(VirtualFile grammarFile) {
+		LOG.info("refreshGrammar " + grammarFile.getPath() + " " + project.getName());
+		PreviewState previewState = PreviewService.getInstance(project).getPreviewState(grammarFile);
 
 		inputPanel.grammarFileSaved();
 
@@ -328,16 +407,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		}
 	}
 
-	/** Notify the preview tool window contents that the grammar file has changed */
-	public void grammarFileChanged(VirtualFile newFile) {
-		switchToGrammar(newFile);
-	}
-
 	/** Load grammars and set editor component. */
 	private void switchToGrammar(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
 		LOG.info("switchToGrammar " + grammarFileName+" "+project.getName());
-		PreviewState previewState = ANTLRv4PluginController.getInstance(project).getPreviewState(grammarFile);
+		PreviewState previewState = PreviewService.getInstance(project).getPreviewState(grammarFile);
 
 		inputPanel.switchToGrammar(grammarFile);
 		profilerPanel.switchToGrammar();
@@ -371,7 +445,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		}
 	}
 
-	public void closeGrammar(VirtualFile grammarFile) {
+	private void closeGrammar(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
 		LOG.info("closeGrammar "+grammarFileName+" "+project.getName());
 
@@ -438,9 +512,8 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 	public void updateParseTreeFromDoc(VirtualFile grammarFile) {
 		if ( project.isDisposed() ) return;
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		if ( controller==null ) return;
-		PreviewState previewState = controller.getPreviewState(grammarFile);
+		PreviewService service = PreviewService.getInstance(project);
+		PreviewState previewState = service.getPreviewState(grammarFile);
 		LOG.info("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
 		if ( previewState.parserGrammar()==null || previewState.lexerGrammar()==null ) {
 			// likely error in grammar prevents it from loading properly into previewState; bail
@@ -452,8 +525,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		if ( editor==null ) return;
 		final String inputText = editor.getDocument().getText();
 
-		// The controller will call us back when it's done parsing
-		// Wipes out the console and also any error annotations
+		// The service publishes the result when it's done parsing
 		updateQueue.queue(new Update(this) {
 			@Override
 			public boolean canEat(Update update) {
@@ -461,10 +533,10 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			}
 			@Override
 			public void run() {
-				inputPanel.clearParseErrors();
-				controller.startParsing();
-//				System.out.println("PARSE:\n"+inputText);
-				controller.parseText(grammarFile, inputText);
+				inputPanel.clearParseErrors(); // wipes out the console and any error annotations
+				cancelParserAction.setEnabled(false);
+				buttonBar.updateActionsAsync();
+				service.parse(grammarFile, inputText);
 			}
 		});
 	}
@@ -473,19 +545,8 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		return inputPanel;
 	}
 
-	public void autoRefreshPreview(VirtualFile virtualFile) {
-		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-
-		if (autoRefresh
-				&& controller != null
-				&& inputPanel.previewState() != null
-				&& inputPanel.previewState().startRule() != null) {
-			ApplicationManager.getApplication().invokeLater(() -> controller.grammarFileSavedEvent(virtualFile));
-		}
-	}
-
 	/** Shows a finished parse; {@code previewState} is the snapshot it was made with. EDT only. */
-	public void onParsingCompleted(PreviewState previewState, long duration) {
+	private void onParsingCompleted(PreviewState previewState, long duration) {
 		cancelParserAction.setEnabled(false);
 		buttonBar.updateActionsAsync();
 
@@ -502,21 +563,6 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		}
 	}
 
-	public void notifySlowParsing() {
-		cancelParserAction.setEnabled(true);
-		buttonBar.updateActionsAsync();
-	}
-
-	public void onParsingCancelled() {
-		cancelParserAction.setEnabled(false);
-		buttonBar.updateActionsAsync();
-		showError("Parsing was aborted");
-	}
-
-	public void startParsing() {
-		cancelParserAction.setEnabled(false);
-		buttonBar.updateActionsAsync();
-	}
 
 	@Override
 	public void onParserRuleSelected(Tree tree) {
@@ -540,7 +586,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			return;
 		}
 
-		// ANTLRv4PluginController.parseText() lazily updates the parse tree so it's possible
+		// PreviewService.parse() lazily updates the parse tree so it's possible
 		// that we have edited the input and something triggers a click on the Hierarchy pane
 		// before the tree is done and therefore the tree parameter to this method.
 		// Avoid trying to select text outside of doc[0..stopindex] as a general rule too.

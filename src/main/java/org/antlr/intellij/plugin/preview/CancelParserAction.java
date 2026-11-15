@@ -4,7 +4,6 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -33,10 +32,8 @@ public class CancelParserAction extends AnAction {
 
 	@Override
 	public void actionPerformed(@NotNull AnActionEvent e) {
-		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(e.getProject());
-
-		if (controller != null) {
-			controller.abortCurrentParsing();
+		if ( e.getProject()!=null ) {
+			PreviewService.getInstance(e.getProject()).cancelParse();
 		}
 	}
 

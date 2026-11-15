@@ -39,14 +39,9 @@ Parses use `ReadAction.nonBlocking`; loads don't (they can't be cancelled); see 
 `PreviewState` is a record replaced on the EDT; `InputPanel` owns one input editor and the text
 per grammar. Resolves the step 1 findings on the deleted start rule and hidden editors.
 
-### Step 5. Split the controller; UI subscribes to a topic
-`ANTLRv4PluginController` (~720 lines) routes editor events, loads grammars, runs parses and
-calls into the panel.
-- A grammar service (step 2's cache and loading), a preview service (start rule and input per
-  grammar, parse jobs), and a project message-bus `Topic` the panel subscribes to with its own
-  disposable. The services never call the UI.
-- Keep `getInstance` call sites working during the move, then remove the controller.
-- Prior art: the platform's services + `MessageBus` topics (e.g. `FileEditorManagerListener`).
+### Step 5. Split the controller; UI subscribes to a topic: done (see DONE.md, item 41)
+`PreviewService` + `PreviewListener.TOPIC`, loading in `GrammarCache`, `ToolOutput` a service;
+the controller and startup activity are gone.
 
 ### Step 6. Smaller cleanups
 - Logging: routine events at debug, not info.
