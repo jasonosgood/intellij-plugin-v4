@@ -90,7 +90,7 @@ public final class PreviewService implements Disposable {
 
 	@Override
 	public void dispose() {
-		LOG.info("dispose " + project.getName()); // lifetime, a child, is already disposed
+		LOG.debug("dispose " + project.getName()); // lifetime, a child, is already disposed
 	}
 
 	// ------------------------------ state
@@ -129,7 +129,7 @@ public final class PreviewService implements Disposable {
 
 	/** The user chose {@code startRule} for {@code grammarFile} (Test Rule). EDT only. */
 	public void setStartRule(@NotNull VirtualFile grammarFile, String startRule) {
-		LOG.info("setStartRule " + startRule + " " + project.getName());
+		LOG.debug("setStartRule " + startRule + " " + project.getName());
 		updatePreviewState(grammarFile, s -> s.withStartRule(startRule));
 		publisher().startRuleChanged(grammarFile);
 	}
@@ -140,7 +140,7 @@ public final class PreviewService implements Disposable {
 	 */
 	public void startRuleRenamed(@NotNull VirtualFile grammarFile, String newName) {
 		if ( !previewStates.containsKey(grammarFile) ) return; // closed since
-		LOG.info("startRuleRenamed " + newName + " " + project.getName());
+		LOG.debug("startRuleRenamed " + newName + " " + project.getName());
 		updatePreviewState(grammarFile, s -> s.withRenamedStartRule(newName));
 	}
 
@@ -148,7 +148,7 @@ public final class PreviewService implements Disposable {
 	 *  fresh, then publishes {@link PreviewListener#grammarSelected}.
 	 */
 	public void grammarSelected(@NotNull VirtualFile grammarFile) {
-		LOG.info("grammarSelected " + grammarFile.getPath() + " " + project.getName());
+		LOG.debug("grammarSelected " + grammarFile.getPath() + " " + project.getName());
 		runGrammarLoad(
 			() -> Map.of(grammarFile, GrammarCache.getInstance(project).get(grammarFile)),
 			() -> publisher().grammarSelected(grammarFile));
@@ -156,7 +156,7 @@ public final class PreviewService implements Disposable {
 
 	/** {@code grammarFile}'s tab closed: drops its state and cached grammars. EDT only. */
 	public void grammarClosed(@NotNull VirtualFile grammarFile) {
-		LOG.info("grammarClosed " + grammarFile.getPath() + " " + project.getName());
+		LOG.debug("grammarClosed " + grammarFile.getPath() + " " + project.getName());
 		if ( previewStates.remove(grammarFile)!=null ) {
 			publisher().grammarClosed(grammarFile);
 			GrammarCache.getInstance(project).remove(grammarFile);
@@ -198,7 +198,7 @@ public final class PreviewService implements Disposable {
 					LOG.debug("grammarSaved " + grammarFile.getPath() + ": no grammar changed");
 					return null;
 				}
-				LOG.info("grammarSaved " + grammarFile.getPath() + " " + project.getName());
+				LOG.debug("grammarSaved " + grammarFile.getPath() + " " + project.getName());
 				Map<VirtualFile, GrammarCache.Loaded> loads = new LinkedHashMap<>();
 				loads.put(grammarFile, cache.get(grammarFile));
 				if ( !dependents.isEmpty() ) {

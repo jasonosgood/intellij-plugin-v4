@@ -48,7 +48,7 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 			return; // whoa!
 		}
 		VirtualFile grammarFile = MyActionUtils.getGrammarFileFromEvent(e);
-		LOG.info("actionPerformed "+(grammarFile==null ? "NONE" : grammarFile));
+		LOG.debug("actionPerformed "+(grammarFile==null ? "NONE" : grammarFile));
 		if ( grammarFile==null ) return;
 		String title = "ANTLR Code Generation";
 		boolean canBeCancelled = true;

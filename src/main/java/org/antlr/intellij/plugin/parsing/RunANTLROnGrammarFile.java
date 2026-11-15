@@ -120,7 +120,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 		File inF = new File(fullyQualifiedInputFileName);
 		File outF = new File(fullyQualifiedOutputFileName);
 		boolean stale = inF.lastModified()>outF.lastModified();
-		LOG.info((!stale ? "not" : "") + "stale: " + fullyQualifiedInputFileName + " -> " + fullyQualifiedOutputFileName);
+		LOG.debug((!stale ? "not" : "") + "stale: " + fullyQualifiedInputFileName + " -> " + fullyQualifiedOutputFileName);
 		return stale;
 	}
 
@@ -130,7 +130,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 	private void antlr(VirtualFile vfile) {
 		if ( vfile==null ) return;
 
-		LOG.info("antlr(\""+vfile.getPath()+"\")");
+		LOG.debug("antlr(\""+vfile.getPath()+"\")");
 		List<String> args = getANTLRArgsAsList(project, vfile);
 
 		String sourcePath = getParentDir(vfile);
@@ -143,7 +143,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 			args.add(lexerGrammarFileName);
 		}
 
-		LOG.info("args: " + Utils.join(args.iterator(), " "));
+		LOG.debug("args: " + Utils.join(args.iterator(), " "));
 
 		Tool antlr = new Tool(args.toArray(new String[args.size()]));
 

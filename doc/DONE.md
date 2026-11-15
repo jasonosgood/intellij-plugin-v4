@@ -238,6 +238,10 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     annotator reads. Fixed on the way: a reload now refreshes the grammar shown, not the saved
     one (a save of a grammar not shown parsed the shown input with the wrong grammar). Plan
     deviation: input text stays with the panel (step 4), not the preview service.
+42. Greenfield step 6, logging: routine events (action invocations, grammar loads, switches,
+    editor creation, ANTLR tool runs) log at debug, not info; `ProfilerPanel`'s `System.err`
+    is a logger warning. Enable with Help > Diagnostic Tools > Debug Log Settings
+    (`#org.antlr.intellij.plugin`).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

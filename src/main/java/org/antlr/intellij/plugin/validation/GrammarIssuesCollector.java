@@ -73,7 +73,7 @@ public class GrammarIssuesCollector {
     /** Runs the ANTLR tool on a snapshot; touches no PSI, so call it without a read lock. */
     public static List<GrammarIssue> collectGrammarIssues(Input input) {
         String grammarFileName = input.path;
-        LOG.info("doAnnotate "+grammarFileName);
+        LOG.debug("doAnnotate "+grammarFileName);
         String fileContents = input.text;
         List<String> args = new ArrayList<>(input.args); // copied: may be modified below
         GrammarIssuesCollectorToolListener listener = new GrammarIssuesCollectorToolListener();
@@ -115,7 +115,7 @@ public class GrammarIssuesCollector {
 
             String vocabName = g.getOptionString("tokenVocab");
             if ( vocabName!=null ) { // import vocab to avoid spurious warnings
-                LOG.info("token vocab file "+vocabName);
+                LOG.debug("token vocab file "+vocabName);
                 g.importTokensFromTokensFile();
             }
 

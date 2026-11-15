@@ -1,6 +1,7 @@
 package org.antlr.intellij.plugin.profiler;
 
 import com.intellij.openapi.application.WriteIntentReadAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.CaretModel;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
@@ -35,6 +36,7 @@ import java.text.DecimalFormat;
 import java.text.NumberFormat;
 
 public class ProfilerPanel {
+	private static final Logger LOG = Logger.getInstance(ProfilerPanel.class);
 	public static final Color AMBIGUITY_COLOR = new Color(138, 0, 0);
 	public static final Color FULLCTX_COLOR = new Color(255, 128, 0);
 	public static final Color PREDEVAL_COLOR = new Color(110, 139, 61);
@@ -181,7 +183,7 @@ public class ProfilerPanel {
 		DecisionState decisionState = previewState.parserGrammar().atn.getDecisionState(decision);
 		Interval region = previewState.parserGrammar().getStateToGrammarRegion(decisionState.stateNumber);
 		if ( region==null ) {
-			System.err.println("decision "+decision+" has state "+decisionState.stateNumber+" but no region");
+			LOG.warn("decision "+decision+" has state "+decisionState.stateNumber+" but no region");
 			return;
 		}
 

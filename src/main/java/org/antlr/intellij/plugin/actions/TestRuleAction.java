@@ -100,7 +100,7 @@ public class TestRuleAction extends AnAction implements DumbAware {
 		VirtualFile grammarFile = MyActionUtils.getGrammarFileFromEvent(e);
 		if ( grammarFile==null ) return;
 
-		LOG.info("actionPerformed "+grammarFile);
+		LOG.debug("actionPerformed "+grammarFile);
 
 		ToolWindow previewWindow = ToolWindowManager.getInstance(e.getProject()).getToolWindow(ANTLRv4ToolWindowFactory.PREVIEW_WINDOW_ID);
 		if ( previewWindow!=null ) previewWindow.show(null);

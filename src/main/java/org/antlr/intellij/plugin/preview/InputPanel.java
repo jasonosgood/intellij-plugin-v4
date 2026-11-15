@@ -132,7 +132,7 @@ public class InputPanel {
 	 *  listener never fires with a stale grammar after the editor is gone.
 	 */
 	private Editor createPreviewEditor(final VirtualFile grammarFile, Document doc, Disposable listenerScope) {
-		LOG.info("createEditor: create new editor for "+grammarFile.getPath()+" "+previewPanel.project.getName());
+		LOG.debug("createEditor: create new editor for "+grammarFile.getPath()+" "+previewPanel.project.getName());
 		doc.addDocumentListener(
 			new DocumentListener() {
 				@Override
@@ -167,7 +167,7 @@ public class InputPanel {
 
 	/** Shows {@code grammarFile}'s input in a new editor; the previous grammar's text is kept. */
 	public void switchToGrammar(VirtualFile grammarFile) {
-		LOG.info("switchToGrammar "+grammarFile.getPath()+" "+previewPanel.project.getName());
+		LOG.debug("switchToGrammar "+grammarFile.getPath()+" "+previewPanel.project.getName());
 		releaseEditor();
 		this.grammarFile = grammarFile;
 		previewPanel.clearParseTree();

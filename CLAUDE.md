@@ -31,6 +31,8 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   (macOS, Apple silicon; ~10 s) or `./gradlew runIde` (anywhere; ~60 s). Its log:
   `.intellijPlatform/sandbox/intellij-plugin-v4/IU-2026.2.1/log/idea.log`. Never rebuild
   (`prepareSandbox`) under a running sandbox: the IDE half-reloads the plugin. Use `--restart`.
+  The plugin's own traces log at debug: enable `#org.antlr.intellij.plugin` in Help > Diagnostic
+  Tools > Debug Log Settings to see them in `idea.log`.
 - `./gradlew verifyPlugin`: Plugin Verifier against the build IDE.
 - `-Pantlr4XlDir=...` builds against another antlr4-xl checkout.
 - Keep Gradle output out of context: run with `-q` or pipe through `tail -30`; on failure, grep

@@ -158,7 +158,7 @@ public class ParsingUtils {
 										  String inputText,
 										  Project project) {
 		if ( g==null || lg==null ) {
-			LOG.info("parseText can't parse: missing lexer or parser no Grammar object for " +
+			LOG.debug("parseText can't parse: missing lexer or parser no Grammar object for " +
 					(grammarFile != null ? grammarFile.getName() : "<unknown file>"));
 			return null;
 		}
@@ -183,7 +183,7 @@ public class ParsingUtils {
 										  int startIndex) {
 		String grammarFileName = g.fileName;
 		if (!new File(grammarFileName).exists()) {
-			LOG.info("parseText grammar doesn't exist "+grammarFileName);
+			LOG.debug("parseText grammar doesn't exist "+grammarFileName);
 			return null;
 		}
 
@@ -232,7 +232,7 @@ public class ParsingUtils {
 	 *  the load read (path to text; null for a lexer looked for but absent). See {@link GrammarCache}.
 	 */
 	public static Grammar[] loadGrammars(VirtualFile grammarFile, Project project, Map<String, String> inputs) {
-		LOG.info("loadGrammars "+grammarFile.getPath()+" "+project.getName());
+		LOG.debug("loadGrammars "+grammarFile.getPath()+" "+project.getName());
 		Tool antlr = createANTLRToolForLoadingGrammars(getGrammarProperties(project, grammarFile));
 		LoadGrammarsToolListener listener = (LoadGrammarsToolListener)antlr.getListeners().get(0);
 
@@ -267,10 +267,10 @@ public class ParsingUtils {
 		// Use ANTLR v3's ANTLRParser not ANTLRv4Parser from this plugin
 		switch ( g.getType() ) {
 			case ANTLRParser.PARSER :
-				LOG.info("loadGrammars parser "+g.name);
+				LOG.debug("loadGrammars parser "+g.name);
 				return new Grammar[] {lg, g};
 			case ANTLRParser.LEXER :
-				LOG.info("loadGrammars lexer "+g.name);
+				LOG.debug("loadGrammars lexer "+g.name);
 				lg = (LexerGrammar)g;
 				return new Grammar[] {lg, null};
 			case ANTLRParser.COMBINED :
@@ -281,10 +281,10 @@ public class ParsingUtils {
 					console.print(msg, ConsoleViewContentType.ERROR_OUTPUT);
 					lg = BAD_LEXER_GRAMMAR;
 				}
-				LOG.info("loadGrammars combined: "+lg.name+", "+g.name);
+				LOG.debug("loadGrammars combined: "+lg.name+", "+g.name);
 				return new Grammar[] {lg, g};
 		}
-		LOG.info("loadGrammars invalid grammar type "+g.getTypeString()+" for "+g.name);
+		LOG.debug("loadGrammars invalid grammar type "+g.getTypeString()+" for "+g.name);
 		return null;
 	}
 

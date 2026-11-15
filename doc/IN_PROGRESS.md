@@ -44,7 +44,7 @@ per grammar. Resolves the step 1 findings on the deleted start rule and hidden e
 the controller and startup activity are gone.
 
 ### Step 6. Smaller cleanups
-- Logging: routine events at debug, not info.
+- Logging: done (see DONE.md, item 42). The rest are done when the code is touched anyway:
 - GUI Designer `.form` files (`InputPanel`, `ProfilerPanel`, `ShowAmbigTreesDialog`,
   `ConfigANTLRDialogPanel`) → plain Swing or Kotlin UI DSL, when one of them needs changing
   anyway. Not on its own.

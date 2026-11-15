@@ -65,7 +65,7 @@ public class GenerateLexerRulesForLiteralsAction extends AnAction {
 
 	@Override
 	public void actionPerformed(AnActionEvent e) {
-		LOG.info("actionPerformed GenerateLexerRulesForLiteralsAction");
+		LOG.debug("actionPerformed GenerateLexerRulesForLiteralsAction");
 		final Project project = e.getProject();
 
 		final PsiFile psiFile = e.getData(LangDataKeys.PSI_FILE);

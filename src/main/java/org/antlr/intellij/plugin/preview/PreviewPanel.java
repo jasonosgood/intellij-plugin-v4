@@ -313,7 +313,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	}
 
 	private InputPanel getEditorPanel() {
-		LOG.info("createEditorPanel"+" "+project.getName());
+		LOG.debug("createEditorPanel"+" "+project.getName());
 		return new InputPanel(this);
 	}
 
@@ -321,7 +321,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	private JTabbedPane createParseTreeAndProfileTabbedPanel() {
 		JBTabbedPane tabbedPane = new JBTabbedPane();
 
-		LOG.info("createParseTreePanel" + " " + project.getName());
+		LOG.debug("createParseTreePanel" + " " + project.getName());
 		Pair<UberTreeViewer, JPanel> pair = createParseTreePanel();
 		treeViewer = pair.a;
 		setupContextMenu(treeViewer);
@@ -392,7 +392,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 	/** The shown grammar was reloaded: show its start rule and reparse. */
 	private void refreshGrammar(VirtualFile grammarFile) {
-		LOG.info("refreshGrammar " + grammarFile.getPath() + " " + project.getName());
+		LOG.debug("refreshGrammar " + grammarFile.getPath() + " " + project.getName());
 		PreviewState previewState = PreviewService.getInstance(project).getPreviewState(grammarFile);
 
 		inputPanel.grammarFileSaved();
@@ -410,7 +410,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	/** Load grammars and set editor component. */
 	private void switchToGrammar(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
-		LOG.info("switchToGrammar " + grammarFileName+" "+project.getName());
+		LOG.debug("switchToGrammar " + grammarFileName+" "+project.getName());
 		PreviewState previewState = PreviewService.getInstance(project).getPreviewState(grammarFile);
 
 		inputPanel.switchToGrammar(grammarFile);
@@ -447,7 +447,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 	private void closeGrammar(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
-		LOG.info("closeGrammar "+grammarFileName+" "+project.getName());
+		LOG.debug("closeGrammar "+grammarFileName+" "+project.getName());
 
 		inputPanel.resetStartRuleLabel();
 		inputPanel.clearErrorConsole();
@@ -514,7 +514,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		if ( project.isDisposed() ) return;
 		PreviewService service = PreviewService.getInstance(project);
 		PreviewState previewState = service.getPreviewState(grammarFile);
-		LOG.info("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
+		LOG.debug("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
 		if ( previewState.parserGrammar()==null || previewState.lexerGrammar()==null ) {
 			// likely error in grammar prevents it from loading properly into previewState; bail
 			indicateInvalidGrammarInParseTreePane();
