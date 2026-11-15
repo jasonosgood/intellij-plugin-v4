@@ -220,8 +220,7 @@ lexerAltList
 
 lexerAlt
 	:	lexerElements lexerCommands?
-	|
-   // explicitly allow empty alts
+	|	lexerCommands? // commands alone, e.g. "OTHER : -> mode(DEFAULT_MODE) ;", or an empty alt
 	;
 
 lexerElements

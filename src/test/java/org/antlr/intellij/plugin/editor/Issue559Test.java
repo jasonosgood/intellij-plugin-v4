@@ -1,18 +1,17 @@
 package org.antlr.intellij.plugin.editor;
 
+import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
-import org.antlr.intellij.plugin.TestUtils;
 import org.antlr.intellij.plugin.preview.PreviewPanel;
 import org.junit.Test;
 import org.junit.Assert;
 
-public class Issue559Test extends BasePlatformTestCase {
+public class Issue559Test extends AntlrFixtureTestCase {
 
     @Test
     public void test_shouldNotClosePanel() {
@@ -51,10 +50,8 @@ public class Issue559Test extends BasePlatformTestCase {
 
     @Override
     protected void tearDown() throws Exception {
-        TestUtils.tearDownIgnoringObjectNotDisposedException(() -> {
-            EditorFactory.getInstance().releaseEditor(myFixture.getEditor());
-            super.tearDown();
-        });
+        EditorFactory.getInstance().releaseEditor(myFixture.getEditor());
+        super.tearDown();
     }
 
 }

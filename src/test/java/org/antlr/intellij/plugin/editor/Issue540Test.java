@@ -1,5 +1,6 @@
 package org.antlr.intellij.plugin.editor;
 
+import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.editor.Document;
@@ -10,16 +11,14 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.testFramework.VfsTestUtil;
-import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
-import org.antlr.intellij.plugin.TestUtils;
 import org.apache.commons.io.FileUtils;
 import org.junit.Test;
 
 import java.io.File;
 import java.util.concurrent.Future;
 
-public class Issue540Test extends BasePlatformTestCase {
+public class Issue540Test extends AntlrFixtureTestCase {
 
     private final File LEXER_FILE = new File(getTestDataPath()+"TestLexer.g4");
     private final File PARSER_FILE = new File(getTestDataPath()+"TestParser.g4");
@@ -113,7 +112,7 @@ public class Issue540Test extends BasePlatformTestCase {
         FileUtils.forceDeleteOnExit(PARSER_FILE);
         FileUtils.forceDeleteOnExit(new File(getTestDataGenPath()));
         EditorFactory.getInstance().releaseEditor(myFixture.getEditor());
-        TestUtils.tearDownIgnoringObjectNotDisposedException(super::tearDown);
+        super.tearDown();
     }
 
 }

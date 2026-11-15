@@ -1,19 +1,18 @@
 package org.antlr.intellij.plugin.psi;
 
+import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
-import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.usageView.UsageInfo;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
-import org.antlr.intellij.plugin.TestUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.function.Consumer;
 
-public class GrammarElementRefTest extends BasePlatformTestCase {
+public class GrammarElementRefTest extends AntlrFixtureTestCase {
 	public void testFindUsagesOfLexerRule() {
 		Collection<UsageInfo> ruleUsages = myFixture.testFindUsages("SimpleGrammar.g4");
 		assertEquals(3, ruleUsages.size());
@@ -193,7 +192,7 @@ public class GrammarElementRefTest extends BasePlatformTestCase {
 		// This can avoid exceptions
 		ANTLRv4PluginController.getInstance(getProject()).getConsole().setOutputPaused(true);
 
-		TestUtils.tearDownIgnoringObjectNotDisposedException(() -> super.tearDown());
+		super.tearDown();
 	}
 
 	private <T extends PsiElement> void assertResolvedMatches(Class<T> expectedClass, @Nullable Consumer<T> matcher) {

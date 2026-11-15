@@ -1,14 +1,13 @@
 package org.antlr.intellij.plugin.completion;
 
+import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import com.intellij.codeInsight.lookup.LookupElement;
-import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.antlr.intellij.plugin.ANTLRv4FileType;
-import org.antlr.intellij.plugin.TestUtils;
 
 import java.util.Arrays;
 import java.util.List;
 
-public class ANTLRv4CompletionContributorTest extends BasePlatformTestCase {
+public class ANTLRv4CompletionContributorTest extends AntlrFixtureTestCase {
     public void test_import_completion() {
         myFixture.copyDirectoryToProject("/import_parser_rules", "");
         myFixture.configureByText(
@@ -58,10 +57,5 @@ public class ANTLRv4CompletionContributorTest extends BasePlatformTestCase {
 
     protected String getTestDataPath() {
         return "src/test/resources/completion";
-    }
-
-    @Override
-    protected void tearDown() throws Exception {
-        TestUtils.tearDownIgnoringObjectNotDisposedException(() -> super.tearDown());
     }
 }

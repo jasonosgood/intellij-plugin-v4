@@ -10,6 +10,7 @@ import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.ANTLRv4Language;
 import org.jetbrains.annotations.NotNull;
 import xl.Formatter;
+import xl.GrammarSyntaxException;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -67,8 +68,8 @@ public class GrammarFormattingService extends AsyncDocumentFormattingService {
 				catch (ProcessCanceledException e) {
 					throw e;
 				}
-				catch (IllegalStateException e) { // syntax errors
-					request.onError("Cannot format grammar", e.getMessage());
+				catch (GrammarSyntaxException e) {
+					request.onError("Cannot format grammar", "The grammar has syntax errors (" + e.count + ").");
 				}
 				catch (RuntimeException e) { // formatter bug: report it rather than leave the request hanging
 					LOG.warn("antlr4-xl formatter failed", e);

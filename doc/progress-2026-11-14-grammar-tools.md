@@ -65,7 +65,11 @@
   instead of leaving the request hanging.
 
 ## Notes
-- Full suite: `./gradlew test` → 105 tests, 0 failures (after items 12–31).
+- Full suite: `./gradlew test` → 115 tests, 0 failures (after items 3, 7, 9–11 and the
+  stepwise fixer).
+- antlr4-xl changes for the plugin are committed in the submodule on branch `plugin-linter-api`
+  (`8ffe462` linter API, `61fc364` lint1 skips unreferenced rules), not in the owner's standalone checkout (which has staged renames in progress)
+  and not on GitHub. To share: push that branch from `antlr4-xl/` and merge it into `main`.
 - Sandbox: `launch-sandbox.sh` (see the user's Claude memory). Demo grammar used for Extract Rule
   lived in the session scratchpad; recreate from the test cases if needed.
 - `gradle.properties`: the local `org.gradle.java.home` line was removed; `JAVA_HOME` already
@@ -79,26 +83,65 @@
   (a shared fixture base class), which is worth keeping.
 
 ## Backlog
+- Unused rules are reported twice: by the plugin's existing checks and by xl's lint3. Kept on
+  purpose (owner's decision): the prior errors and warnings stay until the linter can replace
+  every kind of them; then retire the plugin's own.
 1. ~~Push antlr4-xl to GitHub as `jasonosgood/antlr4-xl`.~~ Pushed (private). CI is not a goal:
    this branch is local and experimental, so CI's failure to fetch the private submodule
    doesn't matter.
-2. **Extract Rule on lexer rules should create a `fragment`.** Extracting `[0-9]+` from `INT`
-   currently creates a new token rule `NEW_RULE`, which changes how the input is tokenized.
-3. **Linter → inspections with quick fixes.** xl's `Finding(Token, rule, message, List<Edit>)`
-   maps to `LocalInspectionTool` + `LocalQuickFix`. Needs `Linter` (a Java 25 compact source
-   file) turned into a class with a callable API returning findings for a text, no file I/O.
+2. Extract Rule on lexer rules should create a `fragment` (**tabled**). Extracting `[0-9]+` from
+   `INT` currently creates a new token rule `NEW_RULE`, which changes how the input is tokenized.
+3. ~~Linter → inspections with quick fixes.~~ Done:
+   - antlr4-xl (branch `plugin-linter-api`, commit `8ffe462`, in the submodule only; see Notes):
+     `Linter` is now class `xl.Linter` with `lint(text)`, `fix(text)`, `tokens()`; golden tests
+     pass (`MAIN_CLASS=xl.Linter ./run.sh`).
+   - Plugin: `lint/GrammarLintAnnotator` (`ExternalAnnotator`) + `lint/GrammarLintInspection`
+     (`ExternalAnnotatorBatchInspection`), "Grammar lint (antlr4-xl)" under Settings ›
+     Inspections › ANTLR, on by default as a warning. Prior art: IntelliJ's ESLint integration,
+     the same pairing: the annotator runs the whole-file tool off the read lock; the inspection
+     gives on/off, severity and Code › Inspect Code. Each finding with edits gets "Fix lintN: …";
+     every finding gets "Fix all grammar lint findings in file". A fix can expose new findings
+     (removing the parens in `( B | C ) | C` exposes a duplicate `C`), so each fix re-runs the
+     linter, and Fix All is stepwise: apply one fix, re-lint, repeat until nothing changes (cap
+     1000 steps), under a cancellable progress dialog, then applied as one line diff (one undo).
+     Prior art: ESLint `--fix` re-lints and repeats too, but batches non-overlapping fixes per
+     pass (as xl's own `fix` does); one fix per step never applies a fix computed against a tree
+     another fix has changed. Fixes check the document hasn't changed since the lint. Not linted:
+     grammars with syntax errors. Offsets are converted from code points to UTF-16 (emoji test).
+   - Tests: `lint/GrammarLintTest` (report, one fix, fix all, cascading fix one/fix all,
+     stepwise settles, syntax errors, emoji offsets).
 4. ~~Try Extract Rule, Format and Sort by hand in the sandbox.~~ Done; all looked right.
-5. Canonicalize (tabled): decide whether the action rewrites the file or shows a diff view.
-6. Offsets: ANTLR char streams count code points, the editor counts UTF-16 chars, so grammars
-   with characters outside the BMP (emoji) can shift Extract Rule offsets. Pre-existing.
-7. Migrate the 7 other fixture tests to `AntlrFixtureTestCase`.
+5. Canonicalize (**tabled**): decide whether the action rewrites the file or shows a diff view.
+6. Offsets (**tabled**): ANTLR char streams count code points, the editor counts UTF-16 chars, so
+   grammars with characters outside the BMP (emoji) can shift Extract Rule offsets. Pre-existing.
+   (The linter integration converts its offsets.)
+7. ~~Migrate the 7 other fixture tests to `AntlrFixtureTestCase`.~~ Done, including the two on
+   `LightPlatformCodeInsightTestCase`. `CreateRuleFixTest` now runs its fix in a write command,
+   as the platform does (the old base wrapped every test in one).
 8. ~~Run the IntelliJ Plugin Verifier against 2026.2.~~ Done; see 12–14 for what it found.
    Report: `build/reports/pluginVerifier/IU-262.9437.185/report.html`.
-9. Small: typed exception instead of `IllegalStateException` for xl syntax errors; optional
-   `--start` rule for Sort; consider formatting after sorting.
-10. Longer term: the plugin and xl each carry an ANTLR meta-grammar (`ANTLRv4Parser.g4`,
-    `ANTLR4.g4`); consider converging.
-11. Release: change notes in `plugin.xml`, version bump.
+9. ~~Typed exception for xl syntax errors; start rule for Sort; format after sort?~~ Done:
+   - xl `GrammarSyntaxException` (extends `IllegalStateException`) from Formatter, SortRules and
+     `Linter.lint(text)`; Format and Sort report it as "syntax errors (N)" and log anything else
+     as an internal error.
+   - Sort keeps the start rule chosen in the ANTLR Preview first (falls back to the first parser
+     rule if it no longer exists).
+   - Format after sort: no. They stay separate commands; reformat-on-save covers it. Prior art:
+     IntelliJ's Rearrange Code is separate from Reformat Code (Reformat offers it as an option).
+10. ~~Converge the meta-grammars?~~ Decided: keep both. The plugin's `ANTLRv4Parser.g4` drives
+    the PSI (34 source files depend on its rules and tokens) and has IDE needs (lexer modes for
+    actions, error recovery); xl's `ANTLR4.g4` is the owner's rewrite and off-limits without
+    permission. Converging means rewriting the PSI on a grammar we may not change. Prior art:
+    google-java-format and ktfmt keep their own parsers apart from IntelliJ's PSI; the seam is
+    text. The risk is drift, so `xl/MetaGrammarAgreementTest` checks that both parsers accept or
+    reject the same grammars (test resources + xl's tests; set `GRAMMARS_V4` to add grammars-v4).
+    On grammars-v4 (1,102 files) it found a plugin parser bug, now fixed: lexer alternatives
+    made only of commands (`OTHER : -> mode(DEFAULT_MODE) ;`, GoLexer, PostgreSQLLexer) were
+    syntax errors in the editor. One known difference: xl rejects labels in lexer rules
+    (`LexerElementLabel.g4`), which ANTLR rejects too.
+11. ~~Release notes and version.~~ Change notes for the next release are in `plugin.xml`. The
+    version comes from the release tag (`-PpluginVersion=${GITHUB_REF_NAME}`), so
+    `gradle.properties` stays `next-SNAPSHOT`; tag `1.27` to release.
 
 ### From the Plugin Verifier (2026.2.1)
 Verifier now: **Compatible**; "can probably be enabled or disabled without IDE restart";
@@ -195,6 +238,8 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     only".~~ Fixed: 2026.2 no longer gives plain Swing listeners an implicit lock, so the profiler
     row click, the parse-tree hierarchy selection and the input radio buttons run their editor
     work in `WriteIntentReadAction.run` (the fix the platform's error message names).
+    The verifier lists `WriteIntentReadAction` as experimental API; kept, since the platform
+    prescribes it for this case. Revisit if it changes.
 35. ~~Live templates.~~ Removed (none showed up in the sandbox, and the owner doesn't use them):
     the `templates/` package, `liveTemplates/lexer/user.xml` and their plugin.xml entries.
 32. Platform warning "use project as a parent disposable" (no stack trace) appears about once

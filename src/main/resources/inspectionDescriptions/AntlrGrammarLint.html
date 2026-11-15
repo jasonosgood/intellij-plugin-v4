@@ -1,0 +1,16 @@
+<html>
+<body>
+Reports grammar simplifications found by the antlr4-xl linter, most with a quick fix:
+<ul>
+  <li><b>lint1</b>: a rule with a single child, which can be inlined where it's used</li>
+  <li><b>lint2</b>: duplicate alternatives</li>
+  <li><b>lint3</b>: rules that are never used (report only)</li>
+  <li><b>lint4</b>: unnecessary parentheses</li>
+  <li><b>lint5</b>: suffixes that can be merged, such as <code>( 'a'+ )?</code> to <code>'a'*</code></li>
+  <li><b>lint6</b>: a start rule that doesn't end with <code>EOF</code> (report only)</li>
+  <li><b>lint7</b>: empty alternatives (report only)</li>
+</ul>
+<p>"Fix all grammar lint findings in file" applies every fix, repeating until nothing changes.</p>
+<p>Grammars with syntax errors aren't linted.</p>
+</body>
+</html>

@@ -65,7 +65,7 @@ def xlDir = file(findProperty("antlr4XlDir") ?: "antlr4-xl")
 if (!file("$xlDir/src/xl/Formatter.java").exists()) {
     throw new GradleException("antlr4-xl not found at $xlDir; run: git submodule update --init")
 }
-def xlTools = ["Formatter", "SortRules"]
+def xlTools = ["Formatter", "SortRules", "Linter", "GrammarSyntaxException"]
 // The meta-grammar is moving from grammar/ to src/xl/ in antlr4-xl. Include exactly one copy:
 // with -Xexact-output-dir both would generate into the same folder and the last would win.
 def xlGrammar = ["src/xl/ANTLR4.g4", "grammar/ANTLR4.g4"].find { file("$xlDir/$it").exists() }

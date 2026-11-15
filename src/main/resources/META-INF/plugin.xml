@@ -72,10 +72,22 @@ For really big files and slow grammars, there is an appreciable delay when displ
       ]]></description>
 
   <change-notes><![CDATA[
+	<p>Requires IntelliJ 2026.2 or later and Java 25.</p>
 	<ul>
-	    <li>Fixed compatibility with IntelliJ 2026.2 (#740, #741, #744)</li>
+	    <li>New: Refactor &gt; Extract Rule can replace every occurrence of the selection, suggests a name,
+	        and explains why a selection can't be extracted (part of an element, left recursion,
+	        labels used by actions elsewhere, partly labelled alternatives).</li>
+	    <li>New: Code &gt; Reformat Code formats grammars in one house style (whole file or selected lines).</li>
+	    <li>New: Code &gt; Sort Parser Rules sorts parser rules alphabetically, keeping the start rule first.</li>
+	    <li>New: the "Grammar lint (antlr4-xl)" inspection finds unused rules, duplicate alternatives,
+	        unnecessary parentheses and more, with quick fixes and "fix all in file".</li>
+	    <li>Fixed: lexer alternatives made only of commands (<code>X : -&gt; skip ;</code>) were reported as syntax errors.</li>
+	    <li>Fixed: with several projects open, saving a grammar in one could refresh another's preview.</li>
+	    <li>Fixed: clicking a row in the Profiler threw an exception.</li>
+	    <li>Fixed: grammar analysis and refactorings no longer freeze the editor on large grammars.</li>
+	    <li>The plugin can be enabled or disabled without restarting the IDE.</li>
+	    <li>Removed the ANTLR live templates.</li>
     </ul>
-	 See the complete list of <a href="https://github.com/antlr/intellij-plugin-v4/issues?q=milestone%3A1.25+is%3Aclosed">fixed issues</a>.
       ]]>
   </change-notes>
 
@@ -169,6 +181,10 @@ For really big files and slow grammars, there is an appreciable delay when displ
       <iconProvider implementation="org.antlr.intellij.plugin.ANTLRv4IconProvider"/>
 
       <externalAnnotator language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.ANTLRv4ExternalAnnotator"/>
+      <externalAnnotator language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.lint.GrammarLintAnnotator"/>
+      <localInspection language="ANTLRv4" shortName="AntlrGrammarLint" displayName="Grammar lint (antlr4-xl)"
+                       groupName="ANTLR" enabledByDefault="true" level="WARNING"
+                       implementationClass="org.antlr.intellij.plugin.lint.GrammarLintInspection"/>
       <lang.findUsagesProvider language="ANTLRv4"
                 implementationClass="org.antlr.intellij.plugin.ANTLRv4FindUsagesProvider"/>
 

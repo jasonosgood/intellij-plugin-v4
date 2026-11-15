@@ -1,11 +1,10 @@
 package org.antlr.intellij.plugin.folding;
 
+import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import com.intellij.openapi.editor.FoldRegion;
 import com.intellij.testFramework.EditorTestUtil;
-import com.intellij.testFramework.fixtures.BasePlatformTestCase;
-import org.antlr.intellij.plugin.TestUtils;
 
-public class ANTLRv4FoldingBuilderTest extends BasePlatformTestCase {
+public class ANTLRv4FoldingBuilderTest extends AntlrFixtureTestCase {
 
 	public void test_folding_should_not_throw_on_incomplete_prequel() {
 		// Given
@@ -29,11 +28,6 @@ public class ANTLRv4FoldingBuilderTest extends BasePlatformTestCase {
 		// Then
 		FoldRegion[] allFoldRegions = myFixture.getEditor().getFoldingModel().getAllFoldRegions();
 		assertEquals(0, allFoldRegions.length);
-	}
-
-	@Override
-	protected void tearDown() throws Exception {
-		TestUtils.tearDownIgnoringObjectNotDisposedException(() -> super.tearDown());
 	}
 
 	private void buildInitialFoldings() {

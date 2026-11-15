@@ -1,20 +1,20 @@
 package org.antlr.intellij.plugin.validation;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.testFramework.LightPlatformCodeInsightTestCase;
-import org.antlr.intellij.plugin.TestUtils;
+import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 
-public class CreateRuleFixTest extends LightPlatformCodeInsightTestCase {
+public class CreateRuleFixTest extends AntlrFixtureTestCase {
 
-	public CreateRuleFixTest() {
-		myTestDataPath = "src/test/resources/quickfixes/CreateRuleFix/";
+	@Override
+	protected String getTestDataPath() {
+		return "src/test/resources/quickfixes/CreateRuleFix/";
 	}
 
 	public void testQuickFixDescriptionShouldShowRuleName() {
 		// Given
-		configureByFile("missingRule.g4");
-		CreateRuleFix createRuleFix = new CreateRuleFix(TextRange.create(30, 37), getFile());
+		myFixture.configureByFile("missingRule.g4");
+		CreateRuleFix createRuleFix = new CreateRuleFix(TextRange.create(30, 37), myFixture.getFile());
 
 		// When
 		String description = createRuleFix.getText();
@@ -25,12 +25,12 @@ public class CreateRuleFixTest extends LightPlatformCodeInsightTestCase {
 
 	public void testQuickFixShouldCreateRuleAfterCurrentRule() {
 		// Given
-		configureByFile("missingRule.g4");
-		CreateRuleFix createRuleFix = new CreateRuleFix(TextRange.create(30, 37), getFile());
+		myFixture.configureByFile("missingRule.g4");
+		CreateRuleFix createRuleFix = new CreateRuleFix(TextRange.create(30, 37), myFixture.getFile());
 
 		// When
-		ApplicationManager.getApplication().runWriteAction(
-				() -> createRuleFix.invoke(getProject(), getEditor(), getFile())
+		WriteCommandAction.runWriteCommandAction(getProject(), // quick fixes run inside a command
+				() -> createRuleFix.invoke(getProject(), myFixture.getEditor(), myFixture.getFile())
 		);
 
 		// Then
@@ -38,12 +38,7 @@ public class CreateRuleFixTest extends LightPlatformCodeInsightTestCase {
 				"grammar missingRule;\n\n" +
 				"myRule: newRule;\n\n" +
 				"newRule: ' ';",
-				getFile().getText()
+				myFixture.getFile().getText()
 		);
-	}
-
-	@Override
-	protected void tearDown() throws Exception {
-		TestUtils.tearDownIgnoringObjectNotDisposedException(() -> super.tearDown());
 	}
 }
