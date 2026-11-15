@@ -179,6 +179,18 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     - Speed baseline (`PreviewPerformanceTest`, run with `ANTLR_PERF=1`): `oracle_normal.g4`
       (10,587 lines, 1,830 rules) loads in ~3.2 s warm (3.9 s cold) and parses a one-line
       query in ~330 ms (650 ms cold).
+37. Greenfield step 2: grammars as cached values of their files. `parsing/GrammarCache` (project
+    service) holds the loaded grammars per `VirtualFile`; an entry is valid while the saved text
+    of every file the load read is unchanged (grammar, `tokenVocab` or by-name lexer, a lexer
+    looked for but absent, imports). A save event reloads the saved grammar and the open
+    grammars that read it, or nothing if no text changed. Removed: `grammarFileMods`,
+    `loadedGrammarText` (item 31), `grammarLoadGeneration`, `getAssociatedParserIfLexer`, the
+    `modified` flag on tab switches. Preview state is keyed by `VirtualFile`, not path. Grammars
+    load from saved text, not the editor's. Planned as `CachedValuesManager`; changed because
+    its compute runs in a read action and a 3 s uncancellable load would block typing (see
+    DECISIONS). Four tests added: a save event with no change keeps the grammars, an unsaved
+    edit doesn't reload, moving the grammars keeps the start rule, creating a missing lexer
+    makes the parser stale.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

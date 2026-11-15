@@ -2,12 +2,11 @@ package org.antlr.intellij.plugin.parsing;
 
 import org.antlr.intellij.plugin.ToolOutput;
 import com.intellij.execution.ui.ConsoleViewContentType;
-import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.antlr.intellij.adaptor.parser.SyntaxErrorListener;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
@@ -224,12 +223,19 @@ public class ParsingUtils {
 
 	/** Get lexer and parser grammars */
 	public static Grammar[] loadGrammars(VirtualFile grammarFile, Project project) {
+		return loadGrammars(grammarFile, project, new HashMap<>());
+	}
+
+	/** Get lexer and parser grammars, recording in {@code inputs} the saved text of every file
+	 *  the load read (path to text; null for a lexer looked for but absent). See {@link GrammarCache}.
+	 */
+	public static Grammar[] loadGrammars(VirtualFile grammarFile, Project project, Map<String, String> inputs) {
 		ANTLRv4PluginController.LOG.info("loadGrammars "+grammarFile.getPath()+" "+project.getName());
 		Tool antlr = createANTLRToolForLoadingGrammars(getGrammarProperties(project, grammarFile));
 		LoadGrammarsToolListener listener = (LoadGrammarsToolListener)antlr.getListeners().get(0);
 
 		ToolOutput console = ANTLRv4PluginController.getInstance(project).getConsole();
-		Grammar g = loadGrammar(grammarFile, antlr);
+		Grammar g = loadGrammar(grammarFile, antlr, inputs);
 		if (g == null) {
 			reportBadGrammar(grammarFile, console);
 			return null;
@@ -238,7 +244,7 @@ public class ParsingUtils {
 		// see if a lexer is hanging around somewhere; don't want implicit token defs to make us bail
 		LexerGrammar lg = null;
 		if ( g.getType()==ANTLRParser.PARSER ) {
-			lg = loadLexerGrammarFor(g, project);
+			lg = loadLexerGrammarFor(g, project, inputs);
 			if ( lg!=null ) {
 				g.importVocab(lg);
 			}
@@ -248,6 +254,7 @@ public class ParsingUtils {
 		}
 
 		antlr.process(g, false);
+		recordImports(g, inputs);
 		if ( listener.grammarErrorMessages.size()!=0 ) {
 			String msg = Utils.join(listener.grammarErrorMessages.iterator(), "\n");
 			console.print(msg+"\n", ConsoleViewContentType.ERROR_OUTPUT);
@@ -279,16 +286,30 @@ public class ParsingUtils {
 		return null;
 	}
 
+	/** The Tool reads imported grammars from disk itself; record their saved text as inputs.
+	 *  Read after the load, so a save during the load can go unnoticed until the next one.
+	 */
+	private static void recordImports(Grammar g, Map<String, String> inputs) {
+		List<Grammar> imported = g.getAllImportedGrammars();
+		if ( imported==null ) return;
+		for ( Grammar i : imported ) {
+			if ( i.fileName!=null ) {
+				String path = FileUtil.toSystemIndependentName(i.fileName);
+				inputs.putIfAbsent(path, savedText(path));
+			}
+		}
+	}
+
 	private static void reportBadGrammar(VirtualFile grammarFile, ToolOutput console) {
 		String msg = "Empty or bad grammar in file "+grammarFile.getName();
 		console.print(msg+"\n", ConsoleViewContentType.ERROR_OUTPUT);
 	}
 
 	@Nullable
-	private static Grammar loadGrammar(VirtualFile grammarFile, Tool antlr) {
+	private static Grammar loadGrammar(VirtualFile grammarFile, Tool antlr, Map<String, String> inputs) {
 		// basically here I am mimicking the loadGrammar() method from Tool
 		// so that I can check for an empty AST coming back.
-		GrammarRootAST grammarRootAST = parseGrammar(antlr, grammarFile);
+		GrammarRootAST grammarRootAST = parseGrammar(antlr, grammarFile, inputs);
 		if ( grammarRootAST==null ) {
 			return null;
 		}
@@ -300,19 +321,30 @@ public class ParsingUtils {
 		return g;
 	}
 
-	/** The grammar's text as the editor has it (unsaved changes included), else as on disk. */
-	public static String grammarText(VirtualFile grammarFile) throws IOException {
-		// May be called from the grammar loader thread, so snapshot the text under a (short) read lock
-		String grammarText = ReadAction.computeBlocking(() -> {
-			Document document = FileDocumentManager.getInstance().getDocument(grammarFile);
-			return document != null ? document.getText() : null;
-		});
-		return grammarText!=null ? grammarText : new String(grammarFile.contentsToByteArray());
+	/** The grammar's saved text (unsaved editor changes excluded: the preview reloads on save,
+	 *  and the ANTLR Tool reads imported grammars from disk too).
+	 */
+	public static String savedText(VirtualFile grammarFile) throws IOException {
+		return VfsUtilCore.loadText(grammarFile);
 	}
 
-	public static GrammarRootAST parseGrammar(Tool antlr, VirtualFile grammarFile) {
+	/** The saved text of the file at {@code path}, or null if there is none or it can't be read. */
+	@Nullable
+	public static String savedText(String path) {
+		VirtualFile file = LocalFileSystem.getInstance().findFileByPath(FileUtil.toSystemIndependentName(path));
+		if ( file==null || !file.isValid() || file.isDirectory() ) return null;
 		try {
-			String grammarText = grammarText(grammarFile);
+			return savedText(file);
+		}
+		catch (IOException e) {
+			return null;
+		}
+	}
+
+	public static GrammarRootAST parseGrammar(Tool antlr, VirtualFile grammarFile, Map<String, String> inputs) {
+		try {
+			String grammarText = savedText(grammarFile);
+			inputs.put(grammarFile.getPath(), grammarText);
 			ANTLRStringStream in = new ANTLRStringStream(grammarText);
 			in.name = grammarFile.getPath();
 			return antlr.parse(grammarFile.getPath(), in);
@@ -329,7 +361,7 @@ public class ParsingUtils {
 	 *   	XLexer given XParser.g4 filename or
 	 *     	XLexer given grammar name X
 	 */
-	public static LexerGrammar loadLexerGrammarFor(Grammar g, Project project) {
+	public static LexerGrammar loadLexerGrammarFor(Grammar g, Project project, Map<String, String> inputs) {
 		Tool antlr = createANTLRToolForLoadingGrammars(getGrammarProperties(project, g.fileName));
 		LoadGrammarsToolListener listener = (LoadGrammarsToolListener)antlr.getListeners().get(0);
 		LexerGrammar lg = null;
@@ -344,13 +376,21 @@ public class ParsingUtils {
 			lexerGrammarFile = LocalFileSystem.getInstance().findFileByIoFile(new File(getLexerNameFromParserFileName(g.fileName)));
 		}
 
-		if ( lexerGrammarFile != null && lexerGrammarFile.exists() ) {
+		if ( lexerGrammarFile==null || !lexerGrammarFile.exists() ) {
+			// record the absence, so creating the lexer later makes the load stale
+			String lookedFor = vocabName!=null
+				? new File(new File(g.fileName).getParentFile(), vocabName + ".g4").getPath()
+				: getLexerNameFromParserFileName(g.fileName);
+			inputs.putIfAbsent(FileUtil.toSystemIndependentName(lookedFor), null);
+		}
+		else {
 			ToolOutput console = ANTLRv4PluginController.getInstance(project).getConsole();
 
 			try {
-				lg = (LexerGrammar) loadGrammar(lexerGrammarFile, antlr);
+				lg = (LexerGrammar) loadGrammar(lexerGrammarFile, antlr, inputs);
 				if ( lg!=null ) {
 					antlr.process(lg, false);
+					recordImports(lg, inputs);
 				}
 				else {
 					reportBadGrammar(lexerGrammarFile, console);

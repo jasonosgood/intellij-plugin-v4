@@ -65,9 +65,12 @@ The entry point for the preview window is `PreviewPanel`, which holds the main
 Swing component displayed in the tool window. `ANTLRv4ToolWindowFactory` creates
 it, and the console, when the tool window is first shown; each is disposed with
 its tool window content and owns its editors. `ANTLRv4PluginController` (a project
-service) holds only model state: a cache of parsed grammars that can be previewed,
-per-grammar preview state, and tool output (`ToolOutput`, buffered until the
-console exists). Everytime the
+service) holds only model state: per-grammar preview state, keyed by `VirtualFile`,
+and tool output (`ToolOutput`, buffered until the console exists). Loaded grammars
+come from `GrammarCache` (a project service): an entry per grammar file stays valid
+while the saved text of every file its load read (the grammar, its lexer, its
+imports) is unchanged, so a save reloads exactly the open grammars it affects.
+Loads run off the EDT, without a read lock (see the class comment). Everytime the
 editor switches to another .g4 grammar, the preview is updated accordingly:
 the input text and selected rule are restored to their previous state (if any),
 and the interpreter results are updated. Interpreter results include profiling

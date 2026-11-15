@@ -23,4 +23,13 @@ parentheses are item numbers in [DONE.md](DONE.md).
 - **Preview input from a file (33)** never worked; removed (radio buttons, file chooser,
   `PreviewState.inputFile`). Input is typed or pasted. This also drops the verifier's
   experimental `BrowseFolderRunnable` use.
+- **Grammar cache keyed by content, not `CachedValuesManager` (37).** `CachedValuesManager`
+  computes inside a read action; loading `oracle_normal.g4` takes ~3 s and ANTLR's `Tool` never
+  checks for cancellation, so even a non-blocking read action would block write actions (typing)
+  for the whole load. `GrammarCache` records the saved text of each file a load read and
+  revalidates by comparing texts. Prior art: Bazel and Gradle build caches (content, not
+  timestamps); `ExternalAnnotator` (short read-locked collection, lock-free work). Saved text,
+  not editor text, because the preview reloads on save only and the `Tool` reads imports from
+  disk. Known gap: a load that fails on a missing import isn't retried when the import is
+  created, until the grammar changes or is reopened.
 - **No CI.** Work is local and experimental; `.github/` is left alone.

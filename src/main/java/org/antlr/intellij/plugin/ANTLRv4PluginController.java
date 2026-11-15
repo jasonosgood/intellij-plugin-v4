@@ -31,25 +31,20 @@ import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.util.concurrency.AppExecutorUtil;
+import org.antlr.intellij.plugin.parsing.GrammarCache;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.antlr.intellij.plugin.preview.PreviewPanel;
 import org.antlr.intellij.plugin.preview.PreviewState;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
-import org.antlr.v4.parse.ANTLRParser;
-import org.antlr.v4.tool.Grammar;
-import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
-import java.io.File;
-import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.function.BooleanSupplier;
@@ -97,7 +92,8 @@ public final class ANTLRv4PluginController implements Disposable {
 	/** Grammar attachPreviewPanel() replayed a selection for; the platform's own event for it is skipped. EDT only. */
 	private VirtualFile replayedStartupGrammar;
 
-	public final Map<String, PreviewState> grammarToPreviewState =
+	/** Preview state per grammar file; keyed by file, not path, so state follows renames and moves. */
+	public final Map<VirtualFile, PreviewState> grammarToPreviewState =
 		Collections.synchronizedMap(new HashMap<>());
 	/** The preview tool window's panel, while it exists; EDT only. */
 	private PreviewPanel previewPanel;
@@ -108,19 +104,12 @@ public final class ANTLRv4PluginController implements Disposable {
 
 	private ProgressIndicator parsingProgressIndicator;
 
-	private final Map<String, Long> grammarFileMods = new HashMap<>();
-	/** Text of each grammar when it was last loaded, by path; see {@link #grammarFileSavedEvent}. */
-	private final Map<String, String> loadedGrammarText = new ConcurrentHashMap<>();
-
 	/** Loading a grammar runs ANTLR's full analysis pipeline, which can take seconds
 	 *  on large grammars, so it must never run on the EDT. All loads run in order on
 	 *  this single background thread; UI follow-ups are posted back to the EDT.
 	 */
 	private final ExecutorService grammarLoader =
 		AppExecutorUtil.createBoundedApplicationPoolExecutor("ANTLR grammar loader", 1);
-
-	/** Latest save-triggered load requested per grammar path; superseded queued loads are skipped. */
-	private final Map<String, Integer> grammarLoadGeneration = new ConcurrentHashMap<>();
 
 	public ANTLRv4PluginController(Project project) {
 		this.project = project;
@@ -157,7 +146,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		// currentEditorFileChangedEvent skips that one.
 		VirtualFile current = getCurrentGrammarFile();
 		if ( current!=null ) {
-			currentEditorFileChangedEvent(null, current, false);
+			currentEditorFileChangedEvent(null, current);
 			replayedStartupGrammar = current;
 		}
 	}
@@ -233,41 +222,36 @@ public final class ANTLRv4PluginController implements Disposable {
 		} // else the panel picks the start rule up from the state when it's created
 	}
 
+	/** A grammar was saved (or may have been: auto-refresh calls this after each highlighting
+	 *  pass). Reloads every open grammar whose inputs changed, the saved one first; does nothing
+	 *  if none did. Superseded saves need no bookkeeping: a queued load finds the cache fresh.
+	 */
 	public void grammarFileSavedEvent(VirtualFile grammarFile) {
-
-		Long modCount = grammarFile.getModificationCount();
-		String grammarFilePath = grammarFile.getPath();
-
-		if (grammarFileMods.containsKey(grammarFilePath) && grammarFileMods.get(grammarFilePath).equals(modCount)) {
-			return;
-		}
-
-		grammarFileMods.put(grammarFilePath, modCount);
-
-		// A content-change event also arrives a few seconds after a project opens, with nothing
-		// edited. Reload only if the text differs from what was last loaded: comparing content,
-		// not trusting change events, is what file watchers such as Gradle's and webpack's do.
-		String loadedText = loadedGrammarText.get(grammarFilePath);
-		if ( loadedText!=null ) {
-			try {
-				if ( loadedText.equals(ParsingUtils.grammarText(grammarFile)) ) {
-					LOG.info("grammarFileSavedEvent "+grammarFilePath+" unchanged since loaded; not reloading");
-					return;
-				}
-			}
-			catch (IOException e) {
-				// can't read it; reload, which reports the error
-			}
-		}
-
-		LOG.info("grammarFileSavedEvent "+grammarFilePath+" "+project.getName());
-		final Integer generation = grammarLoadGeneration.merge(grammarFilePath, 1, Integer::sum);
 		runGrammarLoad(
 			() -> {
-				if ( !generation.equals(grammarLoadGeneration.get(grammarFilePath)) ) {
-					return false; // a newer save of this file is queued and will reload it
+				GrammarCache cache = GrammarCache.getInstance(project);
+				boolean savedStale = cache.isStale(grammarFile);
+				List<PreviewState> dependents = new ArrayList<>();
+				for (PreviewState s : grammarToPreviewState.values().toArray(new PreviewState[0])) {
+					if ( s.grammarFile.equals(grammarFile) ) continue;
+					GrammarCache.Loaded loaded = cache.peek(s.grammarFile);
+					if ( loaded!=null && loaded.dependsOn(grammarFile) && cache.isStale(s.grammarFile) ) {
+						dependents.add(s);
+					}
 				}
-				updateGrammarObjectsFromFile(grammarFile, true); // force reload
+				if ( !savedStale && dependents.isEmpty() ) {
+					LOG.debug("grammarFileSavedEvent "+grammarFile.getPath()+": no grammar changed");
+					return false;
+				}
+				LOG.info("grammarFileSavedEvent "+grammarFile.getPath()+" "+project.getName());
+				loadGrammar(grammarFile);
+				if ( !dependents.isEmpty() ) {
+					// a lexer or imported grammar: regenerate its .tokens file for the grammars using it
+					runANTLRTool(grammarFile);
+				}
+				for (PreviewState s : dependents) {
+					loadGrammar(s.grammarFile);
+				}
 				return true;
 			},
 			() -> {
@@ -277,7 +261,7 @@ public final class ANTLRv4PluginController implements Disposable {
 			});
 	}
 
-	public void currentEditorFileChangedEvent(VirtualFile oldFile, VirtualFile newFile, boolean modified) {
+	public void currentEditorFileChangedEvent(VirtualFile oldFile, VirtualFile newFile) {
 		LOG.info("currentEditorFileChangedEvent "+(oldFile!=null?oldFile.getPath():"none")+
 				 " -> "+(newFile!=null?newFile.getPath():"none")+" "+project.getName());
 		VirtualFile replayed = replayedStartupGrammar;
@@ -305,18 +289,11 @@ public final class ANTLRv4PluginController implements Disposable {
 			return;
 		}
 
-		// When switching from a lexer grammar, update its objects in case the grammar was modified.
-		// The updated objects might be needed later by another dependant grammar.
-		final boolean reloadOldFile = oldFile != null && "g4".equals(oldFile.getExtension()) && modified;
+		// Loads newFile unless its cached grammars are fresh; if the grammar switched away from
+		// was edited, editorSelectionChanged saved it, which makes grammars using it stale.
 		runGrammarLoad(
 			() -> {
-				if ( reloadOldFile ) {
-					updateGrammarObjectsFromFile(oldFile, true);
-				}
-				PreviewState previewState = getPreviewState(newFile);
-				if ( previewState.g==null && previewState.lg==null ) { // only load grammars if none is there
-					updateGrammarObjectsFromFile(newFile, false);
-				}
+				loadGrammar(newFile);
 				return true;
 			},
 			() -> {
@@ -381,7 +358,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		}
 
 		// Dispose of state, editor, and such for this file
-		PreviewState previewState = grammarToPreviewState.get(grammarFileName);
+		PreviewState previewState = grammarToPreviewState.get(vfile);
 		if ( previewState==null ) { // project closing must have done already
 			return;
 		}
@@ -393,7 +370,8 @@ public final class ANTLRv4PluginController implements Disposable {
 			previewPanel.closeGrammar(vfile);
 		}
 
-		grammarToPreviewState.remove(grammarFileName);
+		grammarToPreviewState.remove(vfile);
+		GrammarCache.getInstance(project).remove(vfile);
 
 		// close tool window
 		hidePreview();
@@ -423,84 +401,16 @@ public final class ANTLRv4PluginController implements Disposable {
 		ProgressManager.getInstance().run(gen);
 	}
 
-	/** Look for state information concerning this grammar file and update
-	 *  the Grammar objects.  This does not necessarily update the grammar file
-	 *  in the current editor window.  Either we are already looking at
-	 *  this grammar or we will have seen a grammar file changed event.
-	 *  (I hope!)
+	/** Puts the grammars loaded from {@code grammarFile} (cached if fresh) into its preview
+	 *  state. Grammar loader thread only.
 	 */
-	private void updateGrammarObjectsFromFile(VirtualFile grammarFile, boolean generateTokensFile) {
-		updateGrammarObjectsFromFile_(grammarFile);
-
-		// if grammarFileName is a separate lexer, we need to look for
-		// its matching parser, if any, that is loaded in an editor
-		// (don't go looking on disk).
-		PreviewState s = getAssociatedParserIfLexer(grammarFile.getPath());
-		if ( s!=null ) {
-			if (generateTokensFile) {
-				// Run the tool to regenerate the .tokens file, which will be
-				// needed in the parser grammar
-				runANTLRTool(grammarFile);
-			}
-
-			// try to load lexer again and associate with this parser grammar.
-			// must update parser too as tokens have changed
-			updateGrammarObjectsFromFile_(s.grammarFile);
-		}
-	}
-
-	private String updateGrammarObjectsFromFile_(VirtualFile grammarFile) {
-		String grammarFileName = grammarFile.getPath();
+	private void loadGrammar(VirtualFile grammarFile) {
+		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).get(grammarFile);
 		PreviewState previewState = getPreviewState(grammarFile);
-		try { // read before loading, so an edit made during the load still counts as a change
-			loadedGrammarText.put(grammarFileName, ParsingUtils.grammarText(grammarFile));
+		synchronized (previewState) { // build atomically
+			previewState.lg = loaded.lexer();
+			previewState.g = loaded.parser();
 		}
-		catch (IOException e) {
-			loadedGrammarText.remove(grammarFileName);
-		}
-		Grammar[] grammars = ParsingUtils.loadGrammars(grammarFile, project);
-		if (grammars != null) {
-			synchronized (previewState) { // build atomically
-				previewState.lg = (LexerGrammar)grammars[0];
-				previewState.g = grammars[1];
-			}
-		}
-		else {
-			synchronized (previewState) { // build atomically
-				previewState.lg = null;
-				previewState.g = null;
-			}
-		}
-		return grammarFileName;
-	}
-
-	// TODO there could be multiple grammars importing/tokenVocab'ing this lexer grammar
-	public PreviewState getAssociatedParserIfLexer(String grammarFileName) {
-		for (PreviewState s : grammarToPreviewState.values()) {
-			if ( s!=null && s.lg!=null &&
-					(sameFile(grammarFileName, s.lg.fileName)||s.lg==ParsingUtils.BAD_LEXER_GRAMMAR) )
-			{
-				// s has a lexer with same filename, see if there is a parser grammar
-				// (not a combined grammar)
-				if ( s.g!=null && s.g.getType()==ANTLRParser.PARSER ) {
-					return s;
-				}
-			}
-
-			if ( s!=null && s.g!=null && s.g.importedGrammars!=null ) {
-				for ( Grammar importedGrammar : s.g.importedGrammars ) {
-					if (grammarFileName.equals(importedGrammar.fileName)) {
-						return s;
-					}
-				}
-			}
-		}
-		return null;
-	}
-
-	private boolean sameFile(String pathOne, String pathTwo) {
-		// use new File() to support both / and \ in paths
-		return new File(pathOne).equals(new File(pathTwo));
 	}
 
 	public void parseText(final VirtualFile grammarFile, String inputText) {
@@ -584,20 +494,8 @@ public final class ANTLRv4PluginController implements Disposable {
 	}
 
 	public @NotNull PreviewState getPreviewState(VirtualFile grammarFile) {
-		// make sure only one thread tries to add a preview state object for a given file
-		String grammarFileName = grammarFile.getPath();
-		// Have we seen this grammar before?
-		if (grammarToPreviewState != null) {
-			PreviewState stateForCurrentGrammar = grammarToPreviewState.get(grammarFileName);
-			if ( stateForCurrentGrammar!=null ) {
-				return stateForCurrentGrammar; // seen this before
-			}
-		}
-		// not seen, must create state; atomic because the EDT and the grammar loader both get here
-		PreviewState stateForCurrentGrammar =
-			grammarToPreviewState.computeIfAbsent(grammarFileName, k -> new PreviewState(project, grammarFile));
-
-		return stateForCurrentGrammar;
+		// atomic because the EDT and the grammar loader both get here
+		return grammarToPreviewState.computeIfAbsent(grammarFile, k -> new PreviewState(project, grammarFile));
 	}
 
 	public Editor getEditor(VirtualFile vfile) {
@@ -693,30 +591,18 @@ public final class ANTLRv4PluginController implements Disposable {
 	/** Editor tab selection changed in this project; called by {@link GrammarEditorTabListener}. */
 	public void editorSelectionChanged(@NotNull FileEditorManagerEvent event) {
 		if ( projectIsClosed ) return;
-		boolean modified = false;
-
-		if (event.getOldEditor() != null) {
-			if (event.getOldEditor().isModified()) {
-				modified = true;
-			} else {
-				VirtualFile oldFile = event.getOldEditor().getFile();
-				String oldFilePath = oldFile.getPath();
-				Long modCount = oldFile.getModificationCount();
-				modified = grammarFileMods.containsKey(oldFilePath) &&
-						!grammarFileMods.get(oldFilePath).equals(modCount);
-			}
-		}
-
-		if (modified) {
+		// Switching away from an edited grammar saves it, so grammars using it see the edit.
+		VirtualFile oldFile = event.getOldFile();
+		if ( oldFile!=null && oldFile.isValid() && "g4".equals(oldFile.getExtension()) ) {
 			PsiDocumentManager psiMgr = PsiDocumentManager.getInstance(project);
 			FileDocumentManager docMgr = FileDocumentManager.getInstance();
-			Document doc = docMgr.getDocument(event.getOldFile());
-			if ( !psiMgr.isCommitted(doc) || docMgr.isDocumentUnsaved(doc) ) {
+			Document doc = docMgr.getDocument(oldFile);
+			if ( doc!=null && (!psiMgr.isCommitted(doc) || docMgr.isDocumentUnsaved(doc)) ) {
 				psiMgr.commitDocument(doc);
 				docMgr.saveDocument(doc);
 			}
 		}
-		currentEditorFileChangedEvent(event.getOldFile(), event.getNewFile(), modified);
+		currentEditorFileChangedEvent(oldFile, event.getNewFile());
 	}
 
 	/** An editor tab closed in this project; called by {@link GrammarEditorTabListener}. */

@@ -29,23 +29,8 @@ Found while writing them; decide during steps 2–4 whether to keep each behavio
   with exact ambiguity detection and profiling on. Consider profiling only when the Profiler
   tab is shown.
 
-### Step 2. Grammars as cached values of their files
-Today grammars are keyed by path string and reloaded on VFS save events, with modification
-counts and text comparisons (`grammarFileMods`, `loadedGrammarText`, item 31) to skip
-redundant reloads.
-- Compute the loaded `Grammar`/`LexerGrammar` pair per grammar file with
-  `CachedValuesManager.getCachedValue(psiFile, …)`, depending on the PSI of every file involved
-  (the grammar, its `tokenVocab` lexer, the separate lexer found by name, imports). The platform
-  invalidates it; no save listener, no modification bookkeeping.
-- Key per-grammar state by `VirtualFile` (or a `SmartPsiElementPointer`), not path strings, so
-  renames and moves keep state.
-- Reload on save only (decided). Grammar text comes from the document; a save is what makes
-  the cached value stale for the preview. Loading a large SQL grammar runs ANTLR's full
-  analysis and can take seconds, so loads stay coalesced (step 3).
-- `import X;` grammars are read from disk by the ANTLR `Tool`; they stay save-driven unless the
-  `Tool` is given document text.
-- Prior art: how language plugins cache derived data (`CachedValuesManager` with PSI
-  dependencies); the platform's guide on caching.
+### Step 2. Grammars as cached values of their files: done (see DONE.md, item 37)
+`GrammarCache` keyed by saved text instead of `CachedValuesManager`; see DECISIONS.md.
 
 ### Step 3. Platform async in place of the hand-rolled loader
 Today: a single-thread executor, generation counters, `invokeLater`, and `projectIsClosed`
@@ -54,8 +39,8 @@ checks scattered through the controller; preview parses via `BackgroundTaskUtil`
   .finishOnUiThread(…)`. Coalescing drops superseded work; expiring cancels it when the panel
   or project goes; finishing on the UI thread replaces the manual `invokeLater`.
 - Keep the slow-parse notice and the cancel button (cancel the promise).
-- Remove `projectIsClosed`, `grammarLoadGeneration`, `grammarLoadsDone` (tests wait on the
-  promise instead).
+- Remove `projectIsClosed` and `grammarLoadsDone` (tests wait on the promise instead).
+  (`grammarLoadGeneration` went in step 2: the cache makes superseded loads no-ops.)
 - Prior art: the platform's threading model guide; Sort and Extract Rule already use
   `ReadAction.nonBlocking` (item 23).
 

@@ -13,8 +13,11 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.testFramework.PlatformTestUtil;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
+import org.antlr.intellij.plugin.parsing.GrammarCache;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.tool.Grammar;
+import org.antlr.v4.tool.LexerGrammar;
 
 import java.io.File;
 import java.util.concurrent.Future;
@@ -139,6 +142,59 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertNotNull(controller.getPreviewState(parser).g.getRule("extra"));
 	}
 
+	/** A save event with nothing changed (it also arrives after a project opens) keeps the grammars. */
+	public void testSaveEventWithoutChangesDoesNotReload() {
+		select(parser);
+		attachPanel();
+		Grammar before = controller.getPreviewState(parser).g;
+		controller.grammarFileSavedEvent(parser);
+		waitForGrammarLoads();
+		assertSame(before, controller.getPreviewState(parser).g);
+	}
+
+	/** The preview reloads on save only; auto-refresh sends save events for unsaved edits too. */
+	public void testUnsavedEditDoesNotReload() {
+		select(parser);
+		attachPanel();
+		Document doc = FileDocumentManager.getInstance().getDocument(parser);
+		WriteCommandAction.runWriteCommandAction(getProject(), () -> doc.setText(doc.getText() + "\nextra : NUMBER ;\n"));
+		controller.grammarFileSavedEvent(parser);
+		waitForGrammarLoads();
+		assertNull(controller.getPreviewState(parser).g.getRule("extra"));
+	}
+
+	/** Preview state is keyed by file, not path: moving the grammars keeps it. */
+	public void testMovingGrammarsKeepsTheStartRule() throws Exception {
+		select(parser);
+		attachPanel();
+		controller.setStartRuleNameEvent(parser, "semver");
+		VirtualFile vdir = parser.getParent();
+		WriteCommandAction.writeCommandAction(getProject()).run(() -> vdir.rename(this, vdir.getName() + "-moved"));
+		dir = new File(vdir.getPath());
+		select(lexer);
+		select(parser);
+		assertTrue(parser.getPath().contains("-moved"));
+		assertEquals("semver", controller.getPreviewState(parser).startRuleName);
+		assertEquals("SemanticVersionParser", controller.getPreviewState(parser).g.name);
+	}
+
+	/** A lexer looked for but absent is an input too: creating it makes the parser's load stale. */
+	public void testCreatingTheMissingLexerReloadsTheParser() throws Exception {
+		File lexerFile = new File(dir, "SemanticVersionLexer.g4");
+		File moved = new File(dir.getParentFile(), dir.getName() + "-SemanticVersionLexer.g4");
+		FileUtil.rename(lexerFile, moved);
+		LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dir).refresh(false, true);
+		select(parser);
+		LexerGrammar missing = controller.getPreviewState(parser).lg;
+		assertTrue(missing==null || !"SemanticVersionLexer".equals(missing.name));
+		FileUtil.rename(moved, lexerFile);
+		LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dir).refresh(false, true);
+		assertTrue(GrammarCache.getInstance(getProject()).isStale(parser));
+		select(LocalFileSystem.getInstance().refreshAndFindFileByIoFile(lexerFile));
+		select(parser);
+		assertEquals("SemanticVersionLexer", controller.getPreviewState(parser).lg.name);
+	}
+
 	/** Records today's behavior: the start rule is cleared, not reset to the first rule. */
 	public void testDeletingTheStartRuleClearsIt() {
 		select(parser);
@@ -169,7 +225,7 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertFalse(input.isDisposed());
 		controller.editorFileClosed(FileEditorManager.getInstance(getProject()), parser);
 		assertTrue(input.isDisposed());
-		assertFalse(controller.grammarToPreviewState.containsKey(parser.getPath()));
+		assertFalse(controller.grammarToPreviewState.containsKey(parser));
 	}
 
 	public void testDisposingThePanelReleasesAllInputEditors() {
