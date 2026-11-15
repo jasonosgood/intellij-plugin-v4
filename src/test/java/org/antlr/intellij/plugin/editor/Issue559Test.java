@@ -1,9 +1,9 @@
 package org.antlr.intellij.plugin.editor;
 
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
-import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
@@ -21,7 +21,9 @@ public class Issue559Test extends AntlrFixtureTestCase {
 
         // Setup
         ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-        PreviewPanel panel = controller.getPreviewPanel();
+        PreviewPanel panel = new PreviewPanel(project); // light tests run no tool window factories
+        Disposer.register(getTestRootDisposable(), panel);
+        controller.attachPreviewPanel(panel);
         ToolWindow previewWindow = controller.previewWindowForTests = new MockToolWindow();
         FileEditorManager source = FileEditorManager.getInstance(project);
 
@@ -46,12 +48,6 @@ public class Issue559Test extends AntlrFixtureTestCase {
     @Override
     protected String getTestDataPath() {
         return "src/test/resources/editor";
-    }
-
-    @Override
-    protected void tearDown() throws Exception {
-        EditorFactory.getInstance().releaseEditor(myFixture.getEditor());
-        super.tearDown();
     }
 
 }

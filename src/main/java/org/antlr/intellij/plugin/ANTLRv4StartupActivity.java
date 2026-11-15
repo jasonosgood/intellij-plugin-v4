@@ -9,8 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Creates the controller's UI parts (preview panel, console) and listeners once the project
- * has opened. {@link ProjectActivity} runs off the EDT, so the work is posted to the EDT.
+ * Installs the controller's listeners once the project has opened. {@link ProjectActivity} runs off the EDT, so the work is posted to the EDT.
  * (Implemented from Java: a suspend function takes a trailing {@link Continuation} and
  * returns its result directly when it doesn't suspend.)
  */

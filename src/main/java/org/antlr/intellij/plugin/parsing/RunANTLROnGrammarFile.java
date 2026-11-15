@@ -1,6 +1,6 @@
 package org.antlr.intellij.plugin.parsing;
 
-import com.intellij.execution.ui.ConsoleView;
+import org.antlr.intellij.plugin.ToolOutput;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
@@ -151,7 +151,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 		Tool antlr = new Tool(args.toArray(new String[args.size()]));
 
-		ConsoleView console = ANTLRv4PluginController.getInstance(project).getConsole();
+		ToolOutput console = ANTLRv4PluginController.getInstance(project).getConsole();
 		String timeStamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Calendar.getInstance().getTime());
 		console.print(timeStamp+": antlr4 "+Misc.join(args.iterator(), " ")+"\n", ConsoleViewContentType.SYSTEM_OUTPUT);
 		antlr.removeListeners();

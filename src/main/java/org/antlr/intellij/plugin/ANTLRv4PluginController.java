@@ -1,7 +1,5 @@
 package org.antlr.intellij.plugin;
 
-import com.intellij.execution.filters.TextConsoleBuilderFactory;
-import com.intellij.execution.ui.ConsoleView;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
@@ -22,7 +20,6 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -71,12 +68,12 @@ import java.util.function.BooleanSupplier;
  *  <p>
  *  Lifecycle (prior art: the platform's "migrating components to services" guide): a
  *  project service, so there is exactly one per project and the platform disposes it when
- *  the project closes. Everything it owns (listeners, the console, the reparse queue,
- *  preview editors) is registered against it as parent {@link Disposable}, so nothing
- *  outlives the project and there is no manual uninstall. Editor tab events arrive through
- *  {@link GrammarEditorTabListener}, declared in plugin.xml; the tool windows are declared
- *  there too and get their content from {@link ANTLRv4ToolWindowFactory}. UI parts are
- *  created on the EDT by {@link #projectOpened()}, run from {@link ANTLRv4StartupActivity}.
+ *  the project closes. It holds model state only (grammars, preview state, buffered tool
+ *  output); listeners are registered against it as parent {@link Disposable}, so there is
+ *  no manual uninstall. The UI (preview panel, input editors, console) belongs to the tool
+ *  windows: {@link ANTLRv4ToolWindowFactory} creates it, disposes it with the tool window
+ *  content, and attaches it here ({@link #attachPreviewPanel}, {@link ToolOutput#attach}).
+ *  Editor tab events arrive through {@link GrammarEditorTabListener}, declared in plugin.xml.
  */
 @Service(Service.Level.PROJECT)
 public final class ANTLRv4PluginController implements Disposable {
@@ -95,14 +92,15 @@ public final class ANTLRv4PluginController implements Disposable {
 	public volatile boolean projectIsClosed = false;
 
 	public final Project project;
-	private ConsoleView console;
+	private final ToolOutput console = new ToolOutput();
 	private boolean opened; // projectOpened() has run; EDT only
-	/** Grammar projectOpened() replayed a selection for; the platform's own event for it is skipped. EDT only. */
+	/** Grammar attachPreviewPanel() replayed a selection for; the platform's own event for it is skipped. EDT only. */
 	private VirtualFile replayedStartupGrammar;
 
 	public final Map<String, PreviewState> grammarToPreviewState =
 		Collections.synchronizedMap(new HashMap<>());
-	private PreviewPanel previewPanel;	// same for all grammar editor
+	/** The preview tool window's panel, while it exists; EDT only. */
+	private PreviewPanel previewPanel;
 
 	/** Tests can substitute the preview tool window; null means look it up. */
 	@TestOnly
@@ -140,26 +138,23 @@ public final class ANTLRv4PluginController implements Disposable {
 		return project.getService(ANTLRv4PluginController.class);
 	}
 
-	/** Creates the UI parts and installs listeners. Runs once, on the EDT, when the
-	 *  project opens (or earlier, if a tool window or test asks for the preview panel first).
-	 */
+	/** Installs listeners. Runs once, on the EDT, when the project opens. */
 	public void projectOpened() {
 		ApplicationManager.getApplication().assertIsDispatchThread();
 		if ( opened || projectIsClosed ) return;
 		opened = true;
-
 		LOG.info("ANTLR 4 Plugin opened for "+project.getName()+", Java version "+ SystemInfo.JAVA_VERSION);
-
-		LOG.info("createToolWindows "+project.getName());
-		previewPanel = new PreviewPanel(project);
-		console = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
-		Disposer.register(this, console); // not via tool window content, which may never be created
-
 		installListeners();
+	}
 
-		// A grammar restored in an editor at startup may have been selected before the panel
-		// existed. Replay its selection; if the platform's own selection event for it is still
-		// on its way, currentEditorFileChangedEvent skips that one.
+	/** The preview tool window's panel now exists; it detaches itself when disposed. EDT only. */
+	public void attachPreviewPanel(@NotNull PreviewPanel panel) {
+		ApplicationManager.getApplication().assertIsDispatchThread();
+		if ( projectIsClosed ) return;
+		previewPanel = panel;
+		// The current grammar was selected before the panel existed. Replay its selection; if
+		// the platform's own selection event for it is still on its way (startup),
+		// currentEditorFileChangedEvent skips that one.
 		VirtualFile current = getCurrentGrammarFile();
 		if ( current!=null ) {
 			currentEditorFileChangedEvent(null, current, false);
@@ -167,15 +162,15 @@ public final class ANTLRv4PluginController implements Disposable {
 		}
 	}
 
+	/** The panel is being disposed with its tool window. EDT only. */
+	public void detachPreviewPanel(@NotNull PreviewPanel panel) {
+		if ( previewPanel==panel ) previewPanel = null;
+	}
+
 	@Override
 	public void dispose() {
 		LOG.info("dispose " + project.getName());
 		projectIsClosed = true;
-		if ( previewPanel!=null ) {
-			for (PreviewState it : grammarToPreviewState.values()) {
-				previewPanel.inputPanel.releaseEditor(it);
-			}
-		}
 		grammarLoader.shutdownNow();
 	}
 
@@ -235,10 +230,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		if ( previewPanel!=null ) {
 			previewPanel.getInputPanel().setStartRuleName(grammarFile, startRuleName); // notify the view
 			previewPanel.updateParseTreeFromDoc(grammarFile);
-		}
-		else {
-			LOG.error("setStartRuleNameEvent called before preview panel created");
-		}
+		} // else the panel picks the start rule up from the state when it's created
 	}
 
 	public void grammarFileSavedEvent(VirtualFile grammarFile) {
@@ -281,9 +273,6 @@ public final class ANTLRv4PluginController implements Disposable {
 			() -> {
 				if ( previewPanel!=null ) {
 					previewPanel.grammarFileSaved(grammarFile);
-				}
-				else {
-					LOG.error("grammarFileSavedEvent called before preview panel created");
 				}
 			});
 	}
@@ -400,7 +389,9 @@ public final class ANTLRv4PluginController implements Disposable {
 		previewState.g = null; // wack old ref to the Grammar for text in editor
 		previewState.lg = null;
 
-		previewPanel.closeGrammar(vfile);
+		if ( previewPanel!=null ) {
+			previewPanel.closeGrammar(vfile);
+		}
 
 		grammarToPreviewState.remove(grammarFileName);
 
@@ -518,6 +509,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		// touching the panel, since the parse finishes later on the EDT.
 		final Project parseProject = project;
 		final PreviewPanel panel = previewPanel;
+		if ( panel==null ) return; // nothing to show the result in
 
 		// No need to parse empty text during unit tests, yet...
 		if (inputText.isEmpty() && ApplicationManager.getApplication().isUnitTestMode()) return;
@@ -554,7 +546,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		if ( parsingProgressIndicator!=null ) {
 			parsingProgressIndicator.cancel();
 			parsingProgressIndicator = null;
-			previewPanel.onParsingCancelled();
+			if ( previewPanel!=null ) previewPanel.onParsingCancelled();
 		}
 	}
 
@@ -565,17 +557,13 @@ public final class ANTLRv4PluginController implements Disposable {
 		previewPanel.startParsing();
 	}
 
-	/** The preview panel; on the EDT, creates the UI parts first if the startup activity
-	 *  hasn't run yet (tool window shown early, or tests). Null off the EDT before that. */
+	/** The preview tool window's panel; null until that tool window's content is created. */
 	public PreviewPanel getPreviewPanel() {
-		if ( !opened && ApplicationManager.getApplication().isDispatchThread() ) {
-			projectOpened();
-		}
 		return previewPanel;
 	}
 
-	/** The Tool Output console; null until {@link #projectOpened()} has run. */
-	public ConsoleView getConsole() {
+	/** Output for the Tool Output tool window; buffered until its console exists. */
+	public @NotNull ToolOutput getConsole() {
 		return console;
 	}
 
@@ -618,7 +606,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		if (doc == null) return null;
 
 		EditorFactory factory = EditorFactory.getInstance();
-		final Editor[] editors = factory.getEditors(doc, previewPanel.project);
+		final Editor[] editors = factory.getEditors(doc, project);
 		if ( editors.length==0 ) {
 			// no editor found for this file. likely an out-of-sequence issue
 			// where Intellij is opening a project and doesn't fire events

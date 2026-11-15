@@ -6,7 +6,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.usageView.UsageInfo;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
-import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
@@ -185,14 +184,6 @@ public class GrammarElementRefTest extends AntlrFixtureTestCase {
 			assertEquals("Baz", node.getName());
 			assertEquals("imported3.g4", node.getContainingFile().getName());
 		});
-	}
-
-	@Override
-	protected void tearDown() throws Exception {
-		// This can avoid exceptions
-		ANTLRv4PluginController.getInstance(getProject()).getConsole().setOutputPaused(true);
-
-		super.tearDown();
 	}
 
 	private <T extends PsiElement> void assertResolvedMatches(Class<T> expectedClass, @Nullable Consumer<T> matcher) {

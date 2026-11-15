@@ -4,7 +4,6 @@ import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -111,7 +110,6 @@ public class Issue540Test extends AntlrFixtureTestCase {
         FileUtils.forceDeleteOnExit(LEXER_FILE);
         FileUtils.forceDeleteOnExit(PARSER_FILE);
         FileUtils.forceDeleteOnExit(new File(getTestDataGenPath()));
-        EditorFactory.getInstance().releaseEditor(myFixture.getEditor());
         super.tearDown();
     }
 

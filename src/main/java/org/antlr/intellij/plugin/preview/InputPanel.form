@@ -23,30 +23,6 @@
               <text value="Label"/>
             </properties>
           </component>
-          <grid id="954fc" binding="radioButtonPanel" layout-manager="FlowLayout" hgap="5" vgap="5" flow-align="1">
-            <constraints/>
-            <properties/>
-            <border type="none"/>
-            <children>
-              <component id="2d3c1" class="javax.swing.JRadioButton" binding="inputRadioButton" default-binding="true">
-                <constraints/>
-                <properties>
-                  <selected value="true"/>
-                  <text value="Input"/>
-                </properties>
-              </component>
-              <component id="6ed4e" class="javax.swing.JRadioButton" binding="fileRadioButton" default-binding="true">
-                <constraints/>
-                <properties>
-                  <text value="File"/>
-                </properties>
-              </component>
-              <component id="825e9" class="com.intellij.openapi.ui.TextFieldWithBrowseButton" binding="fileChooser">
-                <constraints/>
-                <properties/>
-              </component>
-            </children>
-          </grid>
         </children>
       </grid>
       <component id="4d6c1" class="javax.swing.JTextArea" binding="placeHolder">
@@ -75,10 +51,4 @@
       </scrollpane>
     </children>
   </grid>
-  <buttonGroups>
-    <group name="inputRadioGroup">
-      <member id="6ed4e"/>
-      <member id="2d3c1"/>
-    </group>
-  </buttonGroups>
 </form>

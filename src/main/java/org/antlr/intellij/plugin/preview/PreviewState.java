@@ -1,7 +1,6 @@
 package org.antlr.intellij.plugin.preview;
 
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.editor.Editor;
@@ -36,7 +35,6 @@ public class PreviewState {
 	public LexerGrammar lg;
 	public String startRuleName;
 	public CharSequence manualInputText = ""; // save input when switching grammars
-	public VirtualFile inputFile; 	// save input file when switching grammars
 
 	public ParsingResult parsingResult;
 
@@ -66,12 +64,6 @@ public class PreviewState {
 	}
 
 	public synchronized void releaseEditor() {
-
-		// Editor can't be release during unit tests, because it is used by multiple tests
-		if (ApplicationManager.getApplication().isUnitTestMode()) return;
-
-		// It would appear that the project closed event occurs before these
-		// close grammars sometimes. Very strange. check for null editor.
 		if (inputEditor != null) {
 			Disposable listenerScope = inputEditor.getUserData(INPUT_LISTENER_SCOPE);
 			if (listenerScope != null) {

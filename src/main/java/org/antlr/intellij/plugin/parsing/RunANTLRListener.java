@@ -1,6 +1,6 @@
 package org.antlr.intellij.plugin.parsing;
 
-import com.intellij.execution.ui.ConsoleView;
+import org.antlr.intellij.plugin.ToolOutput;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import org.antlr.v4.Tool;
 import org.antlr.v4.tool.ANTLRMessage;
@@ -16,10 +16,10 @@ import java.util.List;
 public class RunANTLRListener implements ANTLRToolListener {
 	public final List<String> all = new ArrayList<>();
 	public Tool tool;
-	public ConsoleView console;
+	public ToolOutput console;
 	public boolean hasOutput = false;
 
-	public RunANTLRListener(Tool tool, ConsoleView console) {
+	public RunANTLRListener(Tool tool, ToolOutput console) {
 		this.tool = tool;
 		this.console = console;
 	}

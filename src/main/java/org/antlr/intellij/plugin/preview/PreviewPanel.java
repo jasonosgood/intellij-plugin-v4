@@ -3,6 +3,7 @@ package org.antlr.intellij.plugin.preview;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
@@ -48,12 +49,12 @@ import static com.intellij.icons.AllIcons.Actions.Find;
 import static com.intellij.icons.AllIcons.General.AutoscrollFromSource;
 import static org.antlr.intellij.plugin.ANTLRv4PluginController.PREVIEW_WINDOW_ID;
 
-/** The top level contents of the preview tool window created by
- *  intellij automatically. Since we need grammars to interpret,
- *  this object creates and caches lexer/parser grammars for
- *  each grammar file it gets notified about.
+/** The top level contents of the preview tool window, created by
+ *  {@link org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory} and disposed with the tool
+ *  window content. It owns the input editors and everything registered on it; the grammars
+ *  and per-grammar state it shows live in the controller.
  */
-public class PreviewPanel extends JPanel implements ParsingResultSelectionListener {
+public class PreviewPanel extends JPanel implements ParsingResultSelectionListener, Disposable {
 	//com.apple.eawt stuff stopped working correctly in java 7 and was only recently fixed in java 9;
 	//perhaps in a few more years they will get around to backporting whatever it was they fixed.
 	// until then,  the zoomable tree viewer will only be installed if the user is running java 1.6
@@ -99,8 +100,18 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 				);
 		// If someone is typing, keep resetting timer so parsing doesn't start
 		updateQueue.setRestartTimerOnAdd(true);
-		// Disposing the queue drops queued reparses, so none run after the project closes.
-		Disposer.register(ANTLRv4PluginController.getInstance(project), updateQueue);
+		// Disposing the queue drops queued reparses, so none run after the panel is gone.
+		Disposer.register(this, updateQueue);
+	}
+
+	/** Releases the input editors; the controller keeps the per-grammar state. */
+	@Override
+	public void dispose() {
+		ANTLRv4PluginController controller = project.getService(ANTLRv4PluginController.class);
+		controller.detachPreviewPanel(this);
+		for (PreviewState state : controller.grammarToPreviewState.values().toArray(new PreviewState[0])) {
+			inputPanel.releaseEditor(state);
+		}
 	}
 
 	private void createGUI() {

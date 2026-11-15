@@ -1,6 +1,5 @@
 package org.antlr.intellij.plugin.preview;
 
-import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.hint.HintManagerImpl;
 import com.intellij.codeInsight.hint.HintUtil;
@@ -13,18 +12,11 @@ import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.ex.EditorMarkupModel;
 import com.intellij.openapi.editor.markup.*;
-import com.intellij.openapi.fileChooser.FileChooserDescriptor;
-import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.ComponentWithBrowseButton;
-import com.intellij.openapi.ui.TextComponentAccessor;
-import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.LightweightHint;
 import org.antlr.intellij.adaptor.parser.SyntaxError;
@@ -64,14 +56,10 @@ public class InputPanel {
 	private static final String missingStartRuleLabelText = "%s start rule: <select from navigator or grammar>";
 	private static final String startRuleLabelText = "%s start rule: %s";
 
-	private JRadioButton inputRadioButton;
-	private JRadioButton fileRadioButton;
 	private JTextArea placeHolder;
 	private JTextArea errorConsole;
 	private JLabel startRuleLabel;
-	private JPanel radioButtonPanel;
 	private JPanel startRuleAndInputPanel;
-	private TextFieldWithBrowseButton fileChooser;
 	private JPanel outerMostPanel;
 
 	/**
@@ -98,47 +86,9 @@ public class InputPanel {
 		this.startRuleAndInputPanel.setLayout(layout);
 		this.previewPanel = previewPanel;
 
-		FileChooserDescriptor singleFileDescriptor =
-			FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor().withTitle("Select Input File");
-		ComponentWithBrowseButton.BrowseFolderActionListener<JTextField> browseActionListener =
-			new ComponentWithBrowseButton.BrowseFolderActionListener<JTextField>(
-				fileChooser,
-				previewPanel.project,
-				singleFileDescriptor,
-				TextComponentAccessor.TEXT_FIELD_WHOLE_TEXT
-			) {
-				protected void onFileChosen(@NotNull VirtualFile chosenFile) {
-					// this next line is the code taken from super; pasted in
-					// to avoid compile error on super.onFileCho[o]sen
-					TextComponentAccessor.TEXT_FIELD_WHOLE_TEXT.setText(fileChooser.getChildComponent(),
-					                                                    chosenFileToResultingText(chosenFile));
-					InputPanel.this.onFileChosen(chosenFile);
-				}
-			};
-		fileChooser.getTextField().addActionListener(e -> {
-            VirtualFile chosenFile = VirtualFileManager.getInstance()
-                    .getFileSystem("file")
-			        .findFileByPath(fileChooser.getText());
-			onFileChosen(chosenFile);
-		});
-		fileChooser.addActionListener(browseActionListener);
-		fileChooser.addActionListener(e -> fileRadioButton.setSelected(true)); // listens to the browse button
-		fileChooser.setTextFieldPreferredWidth(40);
-
-		// plain Swing events hold no lock; these replace the input editor
-		inputRadioButton.addActionListener(e -> WriteIntentReadAction.run(this::selectInputEvent));
-		fileRadioButton.addActionListener(e -> WriteIntentReadAction.run(this::selectFileEvent));
-
 		resetStartRuleLabel();
 
 		editorMouseListener = new PreviewEditorMouseListener(this);
-	}
-
-	private void onFileChosen(VirtualFile chosenFile) {
-		if ( previewState!=null ) {
-			previewState.inputFile = chosenFile;
-		}
-		selectFileEvent();
 	}
 
 	public JPanel getComponent() {
@@ -146,7 +96,6 @@ public class InputPanel {
 	}
 
 	public void selectInputEvent() {
-		inputRadioButton.setSelected(true);
 		previewPanel.clearParseTree();
 		clearErrorConsole();
 
@@ -160,7 +109,7 @@ public class InputPanel {
 	public void createManualInputPreviewEditor(final PreviewState previewState) {
 		final EditorFactory factory = EditorFactory.getInstance();
 		Document doc = factory.createDocument("");
-		Editor editor = createPreviewEditor(previewState.grammarFile, doc, false);
+		Editor editor = createPreviewEditor(previewState.grammarFile, doc);
 		// Scoped like the editor's reparse listener; released with the editor.
 		doc.addDocumentListener(
 			new DocumentListener() {
@@ -178,54 +127,12 @@ public class InputPanel {
 		ApplicationManager.getApplication().runWriteAction(() -> doc.setText(previewState.manualInputText));
 	}
 
-	public void selectFileEvent() {
-		fileRadioButton.setSelected(true);
-
-		if ( previewState==null ) {
-			return;
-		}
-
-		VirtualFile inputFile = previewState.inputFile;
-		if (inputFile == null) {
-			errorConsole.setText("Invalid input file");
-			return;
-		}
-
-		Document inputDocument = FileDocumentManager.getInstance().getDocument(inputFile);
-
-		if (inputDocument == null) {
-			errorConsole.setText("Input file does not exist or cannot be loaded: " + inputFile.getPath());
-			return;
-		}
-
-		// get state for grammar in current editor, not editor where user is typing preview input!
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(previewPanel.project);
-
-		// wipe old and make new one
-		releaseEditor(previewState);
-
-		VirtualFile currentGrammarFile = controller != null ? controller.getCurrentGrammarFile() : null;
-		if (currentGrammarFile == null) {
-			return;
-		}
-
-		Editor editor = createPreviewEditor(currentGrammarFile, inputDocument, true);
-		setEditorComponent(editor.getComponent()); // do before setting state
-		previewState.setInputEditor(editor);
-		clearErrorConsole();
-
-		previewPanel.updateParseTreeFromDoc(currentGrammarFile);
-	}
-
-	public Editor createPreviewEditor(final VirtualFile grammarFile, Document doc, boolean readOnly) {
+	public Editor createPreviewEditor(final VirtualFile grammarFile, Document doc) {
 		LOG.info("createEditor: create new editor for "+grammarFile.getPath()+" "+previewPanel.project.getName());
 		final EditorFactory factory = EditorFactory.getInstance();
-		// For file input, doc is the file's shared, IDE-wide Document, which outlives this
-		// editor. Scope the listener to the editor (PreviewState.releaseEditor disposes it),
-		// with the controller as backstop, or listeners pile up on each grammar switch and fire
-		// with stale grammars after the editor (or project) is gone.
-		Disposable listenerScope = Disposer.newDisposable(
-			ANTLRv4PluginController.getInstance(previewPanel.project), "ANTLR preview input listeners");
+		// Scope the listener to the editor (PreviewState.releaseEditor disposes it), with the
+		// panel as backstop, so it never fires with a stale grammar after the editor is gone.
+		Disposable listenerScope = Disposer.newDisposable(previewPanel, "ANTLR preview input listeners");
 		doc.addDocumentListener(
 			new DocumentListener() {
 				@Override
@@ -235,9 +142,7 @@ public class InputPanel {
 			},
 			listenerScope
 		);
-		final Editor editor = readOnly
-				? factory.createViewer(doc, previewPanel.project)
-				: factory.createEditor(doc, previewPanel.project);
+		final Editor editor = factory.createEditor(doc, previewPanel.project);
 		editor.putUserData(PreviewState.INPUT_LISTENER_SCOPE, listenerScope);
 		// force right margin
 		((EditorMarkupModel) editor.getMarkupModel()).setErrorStripeVisible(true);
@@ -265,13 +170,7 @@ public class InputPanel {
 		LOG.info("switchToGrammar "+grammarFileName+" "+previewPanel.project.getName());
 		this.previewState = previewState;
 
-		if ( previewState.inputFile !=null ) {
-			fileChooser.setText(previewState.inputFile.getPath());
-			selectFileEvent();
-		}
-		else {
-			selectInputEvent();
-		}
+		selectInputEvent();
 
 		clearParseErrors();
 

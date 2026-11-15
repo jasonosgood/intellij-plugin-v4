@@ -1,6 +1,6 @@
 package org.antlr.intellij.plugin.parsing;
 
-import com.intellij.execution.ui.ConsoleView;
+import org.antlr.intellij.plugin.ToolOutput;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
@@ -228,7 +228,7 @@ public class ParsingUtils {
 		Tool antlr = createANTLRToolForLoadingGrammars(getGrammarProperties(project, grammarFile));
 		LoadGrammarsToolListener listener = (LoadGrammarsToolListener)antlr.getListeners().get(0);
 
-		ConsoleView console = ANTLRv4PluginController.getInstance(project).getConsole();
+		ToolOutput console = ANTLRv4PluginController.getInstance(project).getConsole();
 		Grammar g = loadGrammar(grammarFile, antlr);
 		if (g == null) {
 			reportBadGrammar(grammarFile, console);
@@ -279,7 +279,7 @@ public class ParsingUtils {
 		return null;
 	}
 
-	private static void reportBadGrammar(VirtualFile grammarFile, ConsoleView console) {
+	private static void reportBadGrammar(VirtualFile grammarFile, ToolOutput console) {
 		String msg = "Empty or bad grammar in file "+grammarFile.getName();
 		console.print(msg+"\n", ConsoleViewContentType.ERROR_OUTPUT);
 	}
@@ -345,7 +345,7 @@ public class ParsingUtils {
 		}
 
 		if ( lexerGrammarFile != null && lexerGrammarFile.exists() ) {
-			ConsoleView console = ANTLRv4PluginController.getInstance(project).getConsole();
+			ToolOutput console = ANTLRv4PluginController.getInstance(project).getConsole();
 
 			try {
 				lg = (LexerGrammar) loadGrammar(lexerGrammarFile, antlr);

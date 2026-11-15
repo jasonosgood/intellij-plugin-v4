@@ -62,8 +62,12 @@ any generated code. A major drawback of this approach is that custom code will
 not be executed: `@members`, actions, predicates...
 
 The entry point for the preview window is `PreviewPanel`, which holds the main
-Swing component displayed in the tool window. It uses `ANTLRv4PluginController`
-to maintain a cache of parsed grammars that can be previewed. Everytime the
+Swing component displayed in the tool window. `ANTLRv4ToolWindowFactory` creates
+it, and the console, when the tool window is first shown; each is disposed with
+its tool window content and owns its editors. `ANTLRv4PluginController` (a project
+service) holds only model state: a cache of parsed grammars that can be previewed,
+per-grammar preview state, and tool output (`ToolOutput`, buffered until the
+console exists). Everytime the
 editor switches to another .g4 grammar, the preview is updated accordingly:
 the input text and selected rule are restored to their previous state (if any),
 and the interpreter results are updated. Interpreter results include profiling
