@@ -1,0 +1,55 @@
+# CLAUDE.md
+
+Guidance for Claude Code in this repository.
+
+## What this is
+The ANTLR v4 plugin for IntelliJ IDEs: grammar editing (PSI, highlighting, navigation,
+completion, refactoring), the ANTLR Preview tool window (interprets a grammar on sample input),
+code generation, and grammar tools from the `antlr4-xl` submodule (lint, format, sort).
+Branch `grammar-tools` is local and experimental, to be shared publicly later.
+
+## Rules
+- **No CI work.** Don't touch `.github/` or `scripts/github_release_notes.py`.
+- Commit once the owner has verified a step (or when asked); never push without asking.
+- Design from prior art: name the mature systems that solve the problem, follow their standard
+  answer, and justify each deviation with a "Prior art" note in code or docs.
+- `antlr4-xl/` is the owner's project with its own rules ([antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md)):
+  Java with ANTLR only (tokens and parse trees, no regex or string processing), and never
+  modify its meta-grammar `ANTLR4.g4` without explicit permission. Commit there on branch
+  `plugin-linter-api`.
+- Keep the two meta-grammars apart (plugin `ANTLRv4Parser.g4` for the PSI, xl `ANTLR4.g4` for
+  the tools); `MetaGrammarAgreementTest` guards against drift. See [doc/DONE.md](doc/DONE.md#decisions-settled-reopen-only-with-a-reason).
+- Don't publish personal details (names, emails, home paths) in committed files.
+
+## Build and run
+- Target: IntelliJ 2026.2.1 (since-build 262), Java 25 toolchain, Gradle 9.7, IntelliJ Platform
+  Gradle Plugin 2.x. Clone with `--recurse-submodules` (or `git submodule update --init`).
+- `./gradlew test`: all tests (115, light fixtures plus plain JUnit).
+- Sandbox IDE: `scripts/launch-sandbox.sh [--restart] [--no-build] [--no-project | PROJECT_DIR]`
+  (macOS, Apple silicon; ~10 s) or `./gradlew runIde` (anywhere; ~60 s). Its log:
+  `.intellijPlatform/sandbox/intellij-plugin-v4/IU-2026.2.1/log/idea.log`. Never rebuild
+  (`prepareSandbox`) under a running sandbox: the IDE half-reloads the plugin. Use `--restart`.
+- `./gradlew verifyPlugin`: Plugin Verifier against the build IDE.
+- `-Pantlr4XlDir=...` builds against another antlr4-xl checkout.
+
+## Docs
+- [README.md](README.md): features and usage for users.
+- [ARCHITECTURE.md](ARCHITECTURE.md): how the plugin is built: PSI, preview, grammar tools.
+- [doc/IN_PROGRESS.md](doc/IN_PROGRESS.md): current work, the greenfield plan, tabled items.
+- [doc/DONE.md](doc/DONE.md): completed work and settled decisions.
+- [antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md): the submodule's own guide; its plans and reports
+  are in [antlr4-xl/docs/superpowers/plans/](antlr4-xl/docs/superpowers/plans/).
+- [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): upstream's PR checklist
+  (read-only here; see Rules).
+- [developer-cert-of-origin.txt](developer-cert-of-origin.txt),
+  [historical-contributors-agreement.txt](historical-contributors-agreement.txt): upstream's
+  contribution terms, relevant before sharing.
+- `<change-notes>` in `src/main/resources/META-INF/plugin.xml`: the next release's notes.
+
+## Testing notes
+- Fixture tests extend `AntlrFixtureTestCase`. The platform checks after every test that all
+  editors were released; keep it that way: editors belong to the UI that shows them (tool
+  window content, a panel), never to a project service.
+- Light tests run no tool window factories. A test that needs the preview builds a
+  `PreviewPanel` with `getTestRootDisposable()` as parent (see `Issue559Test`).
+- Pure logic (Extract Rule planning, lint fixing) is tested without the IDE; prefer that.
