@@ -81,6 +81,10 @@ calls into the panel.
   Code reports in a notification balloon; build-integrated generators (Gradle `antlr`, Maven
   `antlr4`, protobuf) report in the Build tool window. Likely: a notification (success, or
   errors with a link to the grammar), and nothing else. `ToolOutput` is then deleted.
+- **Switching tabs saves the grammar.** Switching away from an edited `.g4` tab saves it
+  (`editorSelectionChanged`), so an unsaved lexer edit reaches the parser's preview on the
+  switch. Pre-existing; surprised the owner, who hadn't saved. Decide whether the switch should
+  save, or the preview should wait for an explicit save (then say so in the preview).
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 
 ## Tabled
