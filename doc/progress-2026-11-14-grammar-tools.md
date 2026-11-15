@@ -70,7 +70,12 @@
 - antlr4-xl changes for the plugin are committed in the submodule on branch `plugin-linter-api`
   (`8ffe462` linter API, `61fc364` lint1 skips unreferenced rules), not in the owner's standalone checkout (which has staged renames in progress)
   and not on GitHub. To share: push that branch from `antlr4-xl/` and merge it into `main`.
-- Sandbox: `launch-sandbox.sh` (see the user's Claude memory). Demo grammar used for Extract Rule
+- Cleanup: removed unreferenced helpers (`ParsingUtils.nextRealToken`/`previousRealToken`/
+  `tokenizeANTLRGrammar`, `RefactorUtils.getAncestorWithType`/`childIndexOf`/`replaceText`/
+  `insertText`, `ProfilerPanel.getProfilerDataTable`) and unused images (`lexer-templates.png`,
+  `pycharm.png`). README: live templates section removed; lint, format, sort and the submodule
+  checkout step added. ARCHITECTURE: grammar tools section, IntelliJ Platform Gradle Plugin 2.x.
+- Sandbox: `launch-sandbox.sh` (`--restart` to stop a running one first; never rebuild under it) (see the user's Claude memory). Demo grammar used for Extract Rule
   lived in the session scratchpad; recreate from the test cases if needed.
 - `gradle.properties`: the local `org.gradle.java.home` line was removed; `JAVA_HOME` already
   points at JDK 25, and the Java 25 toolchain finds an installed JDK 25.

@@ -28,7 +28,12 @@ IntelliJ IDEA and other IntelliJ-based IDEs.
 - can view parse trees for input matched in more than one way (ambiguities) (1.7)
 - can view lookahead trees to show how input directed ANTLR to match a particular alternative (1.7)
 - changes to grammar seen in parse tree upon save of grammar.
-- refactoring: extra rule, inline rule
+- refactoring: extract rule (optionally replacing every occurrence), inline rule
+- grammar lint (from [antlr4-xl](https://github.com/jasonosgood/antlr4-xl)): warnings for unused rules,
+  duplicate alternatives, unnecessary parentheses, nested suffixes and more, with quick fixes
+  and "Fix all grammar lint findings in file". On by default; Settings › Editor › Inspections ›
+  ANTLR › "Grammar lint (antlr4-xl)".
+- Code › Reformat Code (whole file or selection) and Code › Sort Parser Rules, both from antlr4-xl.
 
 You can configure the ANTLR tool options per grammar file; right-click
 in a grammar or on a grammar element within the structured view.
@@ -43,13 +48,6 @@ token information in the preview editor box via tooltips. Meta-key shows parser 
 Errors within the preview editor are now highlighted with tooltips
 and underlining just like a regular editor window. The difference
 is that this window's grammar is specified in your grammar file.
-
-meta-j pops up a list of live templates, just like it does for Java programming.
-Currently, there are a number of lexical rules for common tokens such as comments
-and identifiers that you can automatically inject.
-There are shortcuts like rid that lets you jump directly to the
-lexical rule you would like to generate. If you type the shortcut and wait a
-second, intellij should pop up an action you can select for that shortcut.
 
 ctrl-return, or whatever you have configured for the generate pop-up,
 will bring up a list of things you can generate. The only one so far is
@@ -79,12 +77,6 @@ See [Releases](https://github.com/antlr/intellij-plugin-v4/releases)
 
 ### Code completion
 ![Code completion](images/completion.png)
-
-### Live templates
-
-You can inject predefined lexer rules. Use meta-j or type the abbreviation like rid and wait a second. It should pop up that choice.
-
-![predefined lexer rules](images/lexer-templates.png)
 
 ### Refactoring: generate rules for literals
 
@@ -177,6 +169,10 @@ Even when a grammar is getting a single interpretation of the input, we often wo
 We [use Gradle](https://github.com/antlr/intellij-plugin-v4/pull/295) to build. To contribute to the project, 
 you need a recent version of IntelliJ IDEA (either Community or Ultimate) with the `Gradle` and `Plugin DevKit` 
 plugins enabled. 
+
+The grammar tools (lint, format, sort) come from the `antlr4-xl` git submodule, which the build
+compiles into the plugin, so clone with `--recurse-submodules` or run
+`git submodule update --init` first.
 
 Use `File > Open` and select the `build.gradle` file to import the project. Once everything is imported, you can run a 
 sandboxed IDE using the `runIde` task, either from the `Gradle` tool window of from the CLI:

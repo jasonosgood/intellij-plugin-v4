@@ -2,9 +2,13 @@
 
 ## Build
 
-Gradle is used to build the project. [`gradle-intellij-plugin`][1] is used to pull
-any given version of IntelliJ to add its JARs to the classpath, build forms,
+Gradle is used to build the project. The [IntelliJ Platform Gradle Plugin][1] (2.x) is used
+to pull any given version of IntelliJ to add its JARs to the classpath, build forms,
 publish to the marketplace etc.
+
+The `antlr4-xl` git submodule supplies the grammar tools (linter, formatter, rule sorter).
+`build.gradle` generates its meta-grammar parser (package `xl`) and compiles the tool classes
+it needs into the plugin, as a separate source set.
 
 GitHub Actions are used for continuous integration, see files in `.github/workflows`.
 
@@ -25,6 +29,25 @@ using the "official" parser. The annotator constructs a `org.antlr.v4.Tool`
 with all the flags configured in the `Configure ANTLR...` dialog. 
 `GrammarIssuesCollector` sets up an error listener, then processes all the issues
 reported by the `Tool` to show them in the editor.
+
+## Grammar tools (antlr4-xl)
+
+antlr4-xl parses grammars with its own meta-grammar, separate from the plugin's editor grammar
+in `src/main/antlr`. Both are kept; `MetaGrammarAgreementTest` checks that the two parsers
+accept and reject the same grammars (set `GRAMMARS_V4` to a grammars-v4 checkout to include it).
+
+- Lint: `lint/GrammarLintAnnotator` (an `ExternalAnnotator`) runs `xl.Linter` on the whole file
+  off the read lock and shows each finding, with its fix if it has one.
+  `lint/GrammarLintInspection` pairs with it for on/off, severity and Code › Inspect Code (the
+  same pairing as IntelliJ's ESLint integration). A fix can expose new findings, so every fix
+  re-runs the linter, and Fix All applies one fix at a time, re-linting after each.
+- Format: `format/GrammarFormattingService` (an `AsyncDocumentFormattingService`) runs
+  `xl.Formatter` and applies the result as a line diff (`format/TextDiffs`); a range keeps only
+  the changes inside it.
+- Sort: `actions/SortRulesAction` runs `xl.SortRules` in the background and applies the result
+  as a diff, keeping the preview's start rule first.
+
+Grammars with syntax errors are not linted, formatted or sorted (`xl.GrammarSyntaxException`).
 
 ## Preview window
 
@@ -54,6 +77,6 @@ Since the preview panel has full control over the interpreter, it can monitor
 the parsing phase to detect potential infinite loops caused by bad grammars,
 thus preventing IDE freezes or OutOfMemoryExceptions.
 
-[1]: https://github.com/JetBrains/gradle-intellij-plugin
+[1]: https://github.com/JetBrains/intellij-platform-gradle-plugin
 [2]: https://github.com/antlr/antlr4-intellij-adaptor/
 [3]: https://github.com/antlr/antlr4/blob/master/doc/interpreters.md

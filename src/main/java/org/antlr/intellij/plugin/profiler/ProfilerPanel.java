@@ -117,10 +117,6 @@ public class ProfilerPanel {
 		return outerPanel;
 	}
 
-	public JBTable getProfilerDataTable() {
-		return profilerDataTable;
-	}
-
 	public ProfilerPanel(Project project, PreviewPanel previewPanel) {
 		this.project = project;
 		this.previewPanel = previewPanel;

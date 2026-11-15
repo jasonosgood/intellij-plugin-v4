@@ -58,43 +58,6 @@ public class ParsingUtils {
 		}
 	}
 
-	public static Token nextRealToken(CommonTokenStream tokens, int i) {
-		int n = tokens.size();
-		i++; // search after current i token
-		if ( i>=n || i<0 ) return null;
-		Token t = tokens.get(i);
-		while ( t.getChannel()!=Token.DEFAULT_CHANNEL ) {  // Parser must parse tokens on DEFAULT_CHANNEL
-			if ( t.getType()==Token.EOF ) {
-				TokenSource tokenSource = tokens.getTokenSource();
-				if ( tokenSource==null ) {
-					return new CommonToken(Token.EOF, "EOF");
-				}
-				TokenFactory<?> tokenFactory = tokenSource.getTokenFactory();
-				if ( tokenFactory==null ) {
-					return new CommonToken(Token.EOF, "EOF");
-				}
-				return tokenFactory.create(Token.EOF, "EOF");
-			}
-			i++;
-			if ( i>=n ) return null; // just in case no EOF
-			t = tokens.get(i);
-		}
-		return t;
-	}
-
-	public static Token previousRealToken(CommonTokenStream tokens, int i) {
-		int size = tokens.size();
-		i--; // search before current i token
-		if ( i>=size || i<0 ) return null;
-		Token t = tokens.get(i);
-		while ( t.getChannel()!=Token.DEFAULT_CHANNEL ) { // Parser must parse tokens on DEFAULT_CHANNEL
-			i--;
-			if ( i<0 ) return null;
-			t = tokens.get(i);
-		}
-		return t;
-	}
-
 	public static Token getTokenUnderCursor(PreviewState previewState, int offset) {
 		if ( previewState==null || previewState.parsingResult == null) return null;
 
@@ -154,14 +117,6 @@ public class ParsingUtils {
 			prevToken = t;
 		}
 		return tokenUnderCursor;
-	}
-
-	public static CommonTokenStream tokenizeANTLRGrammar(String text) {
-		CodePointCharStream input = CharStreams.fromString(text);
-		ANTLRv4Lexer lexer = new ANTLRv4Lexer(input);
-		CommonTokenStream tokens = new TokenStreamSubset(lexer);
-		tokens.fill();
-		return tokens;
 	}
 
     public static ParseTree getParseTreeNodeWithToken(ParseTree tree, Token token) {
