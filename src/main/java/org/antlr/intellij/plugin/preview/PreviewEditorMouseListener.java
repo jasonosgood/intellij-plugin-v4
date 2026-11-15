@@ -32,22 +32,23 @@ class PreviewEditorMouseListener implements EditorMouseListener, EditorMouseMoti
 		if ( offset<0 ) return;
 
 		final Editor editor=e.getEditor();
-		if ( inputPanel.previewState==null ) {
+		final PreviewState previewState = inputPanel.previewState(); // one snapshot for this event
+		if ( previewState==null ) {
 			return;
 		}
 
 		if ( e.getMouseEvent().getButton()==MouseEvent.BUTTON3 ) { // right click
-			rightClick(inputPanel.previewState, editor, offset);
+			rightClick(previewState, editor, offset);
 			return;
 		}
 
 		MouseEvent mouseEvent=e.getMouseEvent();
 		if ( mouseEvent.isControlDown() ) {
-			inputPanel.setCursorToGrammarElement(e.getEditor().getProject(), inputPanel.previewState, offset);
+			inputPanel.setCursorToGrammarElement(e.getEditor().getProject(), previewState, offset);
 			inputPanel.setCursorToHierarchyViewElement(offset);
 		}
 		else if ( mouseEvent.isAltDown() ) {
-			inputPanel.setCursorToGrammarRule(e.getEditor().getProject(), inputPanel.previewState, offset);
+			inputPanel.setCursorToGrammarRule(e.getEditor().getProject(), previewState, offset);
 		}
 		else {
 			inputPanel.setCursorToHierarchyViewElement(offset);
@@ -56,7 +57,7 @@ class PreviewEditorMouseListener implements EditorMouseListener, EditorMouseMoti
 	}
 
 	public void rightClick(final PreviewState previewState, Editor editor, int offset) {
-		if (previewState.parsingResult == null) return;
+		if (previewState.parsingResult() == null) return;
 		final List<RangeHighlighter> highlightersAtOffset = MyActionUtils.getRangeHighlightersAtOffset(editor, offset);
 		if (highlightersAtOffset.size() == 0) {
 			return;
@@ -84,20 +85,21 @@ class PreviewEditorMouseListener implements EditorMouseListener, EditorMouseMoti
 		if ( offset<0 ) return;
 
 		Editor editor=e.getEditor();
-		if ( inputPanel.previewState==null ) {
+		final PreviewState previewState = inputPanel.previewState(); // one snapshot for this event
+		if ( previewState==null ) {
 			return;
 		}
 
 		MouseEvent mouseEvent=e.getMouseEvent();
 		InputPanel.clearTokenInfoHighlighters(e.getEditor());
-		if ( mouseEvent.isControlDown() && inputPanel.previewState.parsingResult!=null ) {
-			inputPanel.showTokenInfoUponCtrlKey(editor, inputPanel.previewState, offset);
+		if ( mouseEvent.isControlDown() && previewState.parsingResult()!=null ) {
+			inputPanel.showTokenInfoUponCtrlKey(editor, previewState, offset);
 		}
-		else if ( mouseEvent.isAltDown() && inputPanel.previewState.parsingResult!=null ) {
-			inputPanel.showParseRegion(editor, inputPanel.previewState, offset);
+		else if ( mouseEvent.isAltDown() && previewState.parsingResult()!=null ) {
+			inputPanel.showParseRegion(editor, previewState, offset);
 		}
 		else { // just moving around, show any errors or hints
-			InputPanel.showTooltips(editor, inputPanel.previewState, offset);
+			InputPanel.showTooltips(editor, previewState, offset);
 		}
 	}
 

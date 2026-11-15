@@ -58,9 +58,9 @@ public class ParsingUtils {
 	}
 
 	public static Token getTokenUnderCursor(PreviewState previewState, int offset) {
-		if ( previewState==null || previewState.parsingResult == null) return null;
+		if ( previewState==null || previewState.parsingResult() == null) return null;
 
-		PreviewParser parser = (PreviewParser)previewState.parsingResult.parser;
+		PreviewParser parser = (PreviewParser)previewState.parsingResult().parser;
 		CommonTokenStream tokenStream =	(CommonTokenStream) parser.getInputStream();
 		return ParsingUtils.getTokenUnderCursor(tokenStream, offset);
 	}

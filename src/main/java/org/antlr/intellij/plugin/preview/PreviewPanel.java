@@ -22,10 +22,8 @@ import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
-import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.intellij.plugin.parsing.PreviewParser;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
-import org.antlr.v4.misc.OrderedHashMap;
 import org.antlr.v4.runtime.CommonToken;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
@@ -34,7 +32,6 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.antlr.v4.runtime.tree.TerminalNodeImpl;
 import org.antlr.v4.runtime.tree.Tree;
-import org.antlr.v4.tool.Rule;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -51,8 +48,9 @@ import static org.antlr.intellij.plugin.ANTLRv4PluginController.PREVIEW_WINDOW_I
 
 /** The top level contents of the preview tool window, created by
  *  {@link org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory} and disposed with the tool
- *  window content. It owns the input editors and everything registered on it; the grammars
- *  and per-grammar state it shows live in the controller.
+ *  window content. It owns the input editor and everything registered on it, and the input
+ *  text per grammar ({@link InputPanel}); the grammars, start rules and parse results it shows
+ *  are immutable {@link PreviewState} snapshots the controller keeps.
  */
 public class PreviewPanel extends JPanel implements ParsingResultSelectionListener, Disposable {
 	//com.apple.eawt stuff stopped working correctly in java 7 and was only recently fixed in java 9;
@@ -104,14 +102,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		Disposer.register(this, updateQueue);
 	}
 
-	/** Releases the input editors; the controller keeps the per-grammar state. */
+	/** Releases the input editor; the controller keeps the per-grammar state. */
 	@Override
 	public void dispose() {
-		ANTLRv4PluginController controller = project.getService(ANTLRv4PluginController.class);
-		controller.detachPreviewPanel(this);
-		for (PreviewState state : controller.grammarToPreviewState.values().toArray(new PreviewState[0])) {
-			inputPanel.releaseEditor(state);
-		}
+		project.getService(ANTLRv4PluginController.class).detachPreviewPanel(this);
+		inputPanel.releaseEditor();
 	}
 
 	private void createGUI() {
@@ -319,38 +314,17 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	public void grammarFileSaved(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
 		LOG.info("grammarFileSaved " + grammarFileName+" "+project.getName());
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		PreviewState previewState = controller.getPreviewState(grammarFile);
+		PreviewState previewState = ANTLRv4PluginController.getInstance(project).getPreviewState(grammarFile);
 
-		autoSetStartRule(previewState);
-
-		ensureStartRuleExists(grammarFile);
 		inputPanel.grammarFileSaved();
 
 		// if the saved grammar is not a pure lexer and there is a start rule, reparse
 		// means that switching grammars must refresh preview
-		if ( previewState.g!=null && previewState.startRuleName!=null ) {
-			updateParseTreeFromDoc(previewState.grammarFile);
+		if ( previewState.parserGrammar()!=null && previewState.startRule()!=null ) {
+			updateParseTreeFromDoc(previewState.grammarFile());
 		}
 		else {
 			clearTabs(null); // blank tree
-		}
-
-		profilerPanel.grammarFileSaved(previewState, grammarFile);
-	}
-
-	private void ensureStartRuleExists(VirtualFile grammarFile) {
-		PreviewState previewState = ANTLRv4PluginController.getInstance(project).getPreviewState(grammarFile);
-		// if start rule no longer exists, reset display/state.
-		if ( previewState.g!=null &&
-			 previewState.g!=ParsingUtils.BAD_PARSER_GRAMMAR &&
-			 previewState.startRuleName!=null )
-		{
-			Rule rule = previewState.g.getRule(previewState.startRuleName);
-			if ( rule==null ) {
-				previewState.startRuleName = null;
-				inputPanel.resetStartRuleLabel();
-			}
 		}
 	}
 
@@ -363,36 +337,19 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	private void switchToGrammar(VirtualFile grammarFile) {
 		String grammarFileName = grammarFile.getPath();
 		LOG.info("switchToGrammar " + grammarFileName+" "+project.getName());
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		PreviewState previewState = controller.getPreviewState(grammarFile);
+		PreviewState previewState = ANTLRv4PluginController.getInstance(project).getPreviewState(grammarFile);
 
-		autoSetStartRule(previewState);
+		inputPanel.switchToGrammar(grammarFile);
+		profilerPanel.switchToGrammar();
 
-		inputPanel.switchToGrammar(previewState, grammarFile);
-		profilerPanel.switchToGrammar(previewState, grammarFile);
-
-		if ( previewState.startRuleName!=null ) {
+		if ( previewState.startRule()!=null ) {
 			updateParseTreeFromDoc(grammarFile); // regens tree and profile data
 		}
 		else {
 			clearTabs(null); // blank tree
 		}
 
-		setEnabled(previewState.g!=null || previewState.lg==null);
-	}
-
-	/** From 1.18, automatically set the start rule name to the first rule in the grammar
-	 * if none has been specified
-	 */
-	protected void autoSetStartRule(PreviewState previewState) {
-		if ( previewState.g==null || previewState.g.rules.size()==0 ) {
-			// If there is no grammar all of a sudden, we need to unset the previous rule name
-			previewState.startRuleName = null;
-		}
-		else if ( previewState.startRuleName==null ) {
-			OrderedHashMap<String, Rule> rules = previewState.g.rules;
-			previewState.startRuleName = rules.getElement(0).name;
-		}
+		setEnabled(previewState.parserGrammar()!=null || previewState.lexerGrammar()==null);
 	}
 
 	@Override
@@ -421,10 +378,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		inputPanel.resetStartRuleLabel();
 		inputPanel.clearErrorConsole();
 		clearParseTree(); // wipe tree
-
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		PreviewState previewState = controller.getPreviewState(grammarFile);
-		inputPanel.releaseEditor(previewState);
+		inputPanel.closeGrammar(grammarFile);
 	}
 
 	private void clearTabs(@Nullable ParseTree tree) {
@@ -440,7 +394,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 //		long start = System.nanoTime();
 //		System.out.println("START updateTreeViewer "+Thread.currentThread().getName());
 		if (result.parser instanceof PreviewParser) {
-			AltLabelTextProvider provider = new AltLabelTextProvider(result.parser, preview.g);
+			AltLabelTextProvider provider = new AltLabelTextProvider(result.parser, preview.parserGrammar());
 			if(buildTree) {
 				treeViewer.setTreeTextProvider(provider);
 				treeViewer.setTree(result.tree);
@@ -452,11 +406,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		}
 		else {
 			if(buildTree) {
-				treeViewer.setRuleNames(Arrays.asList(preview.g.getRuleNames()));
+				treeViewer.setRuleNames(Arrays.asList(preview.parserGrammar().getRuleNames()));
 				treeViewer.setTree(result.tree);
 			}
 			if(buildHierarchy) {
-				hierarchyViewer.setRuleNames(Arrays.asList(preview.g.getRuleNames()));
+				hierarchyViewer.setRuleNames(Arrays.asList(preview.parserGrammar().getRuleNames()));
 				hierarchyViewer.setTree(result.tree);
 			}
 		}
@@ -487,8 +441,8 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
 		if ( controller==null ) return;
 		PreviewState previewState = controller.getPreviewState(grammarFile);
-		LOG.info("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRuleName);
-		if ( previewState.g==null || previewState.lg==null ) {
+		LOG.info("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
+		if ( previewState.parserGrammar()==null || previewState.lexerGrammar()==null ) {
 			// likely error in grammar prevents it from loading properly into previewState; bail
 			indicateInvalidGrammarInParseTreePane();
 			return;
@@ -524,29 +478,28 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 		if (autoRefresh
 				&& controller != null
-				&& inputPanel.previewState != null
-				&& inputPanel.previewState.startRuleName != null) {
+				&& inputPanel.previewState() != null
+				&& inputPanel.previewState().startRule() != null) {
 			ApplicationManager.getApplication().invokeLater(() -> controller.grammarFileSavedEvent(virtualFile));
 		}
 	}
 
+	/** Shows a finished parse; {@code previewState} is the snapshot it was made with. EDT only. */
 	public void onParsingCompleted(PreviewState previewState, long duration) {
-		ApplicationManager.getApplication().invokeLater(() -> { // make sure we're on GUI thread for this block
-			cancelParserAction.setEnabled(false);
-			buttonBar.updateActionsAsync();
+		cancelParserAction.setEnabled(false);
+		buttonBar.updateActionsAsync();
 
-			if (previewState.parsingResult != null) {
-				updateTreeViewer(previewState, previewState.parsingResult);
-				profilerPanel.setProfilerData(previewState, duration);
-				inputPanel.showParseErrors(previewState.parsingResult.syntaxErrorListener.getSyntaxErrors());
-			}
-			else if (previewState.startRuleName == null) {
-				indicateNoStartRuleInParseTreePane();
-			}
-			else {
-				indicateInvalidGrammarInParseTreePane();
-			}
-		});
+		if (previewState.parsingResult() != null) {
+			updateTreeViewer(previewState, previewState.parsingResult());
+			profilerPanel.setProfilerData(previewState, duration);
+			inputPanel.showParseErrors(previewState.parsingResult().syntaxErrorListener.getSyntaxErrors());
+		}
+		else if (previewState.startRule() == null) {
+			indicateNoStartRuleInParseTreePane();
+		}
+		else {
+			indicateInvalidGrammarInParseTreePane();
+		}
 	}
 
 	public void notifySlowParsing() {

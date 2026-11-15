@@ -28,7 +28,6 @@ import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.ANTLRv4TokenTypes;
 import org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarProperties;
 import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
-import org.antlr.intellij.plugin.preview.PreviewState;
 import org.antlr.intellij.plugin.psi.AtAction;
 import org.antlr.intellij.plugin.psi.GrammarSpecNode;
 import org.antlr.v4.Tool;
@@ -85,12 +84,11 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 			ReadAction.runBlocking(() -> antlr(grammarFile));
 		}
 		else {
-			ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-			final PreviewState previewState = controller.getPreviewState(grammarFile);
+			GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
 			// is lexer file? gen .tokens file no matter what as tokens might have changed;
 			// a parser that feeds off of that file will need to see the changes.
-			if ( previewState.g==null && previewState.lg!=null) {
-				Grammar g = previewState.lg;
+			if ( loaded!=null && loaded.parser()==null && loaded.lexer()!=null) {
+				Grammar g = loaded.lexer();
 				String language = g.getOptionString(ANTLRv4GrammarProperties.PROP_LANGUAGE);
 				Tool tool = ParsingUtils.createANTLRToolForLoadingGrammars(getGrammarProperties(project, grammarFile));
 				CodeGenerator gen = CodeGenerator.create(tool, g, language);
@@ -104,10 +102,9 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 		String sourcePath = grammarProperties.resolveLibDir(project, getParentDir(grammarFile));
 		String fullyQualifiedInputFileName = sourcePath+File.separator+grammarFile.getName();
 
-		ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		final PreviewState previewState = controller.getPreviewState(grammarFile);
-		Grammar g = previewState.getMainGrammar();
-		// Grammar should be updated in the preview state before calling this function
+		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
+		// The grammar should be loaded into the cache before calling this function
+		Grammar g = loaded==null ? null : loaded.parser()!=null ? loaded.parser() : loaded.lexer();
 		if ( g==null ) {
 			return false;
 		}

@@ -70,10 +70,10 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		select(parser);
 		attachPanel();
 		PreviewState state = controller.getPreviewState(parser);
-		assertEquals("SemanticVersionParser", state.g.name);
-		assertEquals("SemanticVersionLexer", state.lg.name); // found through tokenVocab
-		assertEquals("tag", state.startRuleName); // first rule
-		assertSame(state, panel.getInputPanel().previewState);
+		assertEquals("SemanticVersionParser", state.parserGrammar().name);
+		assertEquals("SemanticVersionLexer", state.lexerGrammar().name); // found through tokenVocab
+		assertEquals("tag", state.startRule()); // first rule
+		assertEquals(parser, panel.getInputPanel().getGrammarFile());
 		assertTrue(panel.isEnabled());
 	}
 
@@ -81,7 +81,7 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		select(parser);
 		assertNull(controller.getPreviewPanel()); // no tool window opened yet
 		attachPanel();
-		assertEquals(parser, panel.getInputPanel().previewState.grammarFile);
+		assertEquals(parser, panel.getInputPanel().getGrammarFile());
 		assertNotNull(panel.getInputPanel().getInputEditor());
 	}
 
@@ -108,12 +108,11 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		attachPanel();
 		controller.setStartRuleNameEvent(parser, "semver");
 		typeInput("0.0.1");
-		PreviewState state = controller.getPreviewState(parser);
 		controller.parseText(parser, "1.0.0");
 		controller.parseText(parser, "2.0.0");
-		waitFor("reparse", () -> state.parsingResult.tree.getText().startsWith("2.0.0"));
+		waitFor("reparse", () -> parsingResult(parser).tree.getText().startsWith("2.0.0"));
 		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
-		assertTrue(state.parsingResult.tree.getText().startsWith("2.0.0"));
+		assertTrue(parsingResult(parser).tree.getText().startsWith("2.0.0"));
 	}
 
 	public void testChangingStartRuleReparses() {
@@ -132,11 +131,11 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		controller.setStartRuleNameEvent(parser, "semver");
 		typeInput("1.2.3");
 		select(lexer);
-		assertEquals(lexer, panel.getInputPanel().previewState.grammarFile);
+		assertEquals(lexer, panel.getInputPanel().getGrammarFile());
 		assertEquals("", inputText());
 		select(parser);
 		assertEquals("1.2.3", inputText());
-		assertEquals("semver", controller.getPreviewState(parser).startRuleName);
+		assertEquals("semver", controller.getPreviewState(parser).startRule());
 	}
 
 	/** Current gap (doc/IN_PROGRESS.md, "Lexer grammar on its own"): no parser, so no preview. */
@@ -144,26 +143,26 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		select(lexer);
 		attachPanel();
 		PreviewState state = controller.getPreviewState(lexer);
-		assertEquals("SemanticVersionLexer", state.lg.name);
-		assertNull(state.g);
-		assertNull(state.startRuleName);
+		assertEquals("SemanticVersionLexer", state.lexerGrammar().name);
+		assertNull(state.parserGrammar());
+		assertNull(state.startRule());
 	}
 
 	public void testSavingAGrammarReloadsIt() {
 		select(parser);
 		attachPanel();
 		editAndSave(parser, text -> text + "\nextra : NUMBER ;\n");
-		assertNotNull(controller.getPreviewState(parser).g.getRule("extra"));
+		assertNotNull(controller.getPreviewState(parser).parserGrammar().getRule("extra"));
 	}
 
 	/** A save event with nothing changed (it also arrives after a project opens) keeps the grammars. */
 	public void testSaveEventWithoutChangesDoesNotReload() {
 		select(parser);
 		attachPanel();
-		Grammar before = controller.getPreviewState(parser).g;
+		Grammar before = controller.getPreviewState(parser).parserGrammar();
 		controller.grammarFileSavedEvent(parser);
 		waitForGrammarLoads();
-		assertSame(before, controller.getPreviewState(parser).g);
+		assertSame(before, controller.getPreviewState(parser).parserGrammar());
 	}
 
 	/** The preview reloads on save only; auto-refresh sends save events for unsaved edits too. */
@@ -174,7 +173,7 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		WriteCommandAction.runWriteCommandAction(getProject(), () -> doc.setText(doc.getText() + "\nextra : NUMBER ;\n"));
 		controller.grammarFileSavedEvent(parser);
 		waitForGrammarLoads();
-		assertNull(controller.getPreviewState(parser).g.getRule("extra"));
+		assertNull(controller.getPreviewState(parser).parserGrammar().getRule("extra"));
 	}
 
 	/** Preview state is keyed by file, not path: moving the grammars keeps it. */
@@ -188,8 +187,8 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		select(lexer);
 		select(parser);
 		assertTrue(parser.getPath().contains("-moved"));
-		assertEquals("semver", controller.getPreviewState(parser).startRuleName);
-		assertEquals("SemanticVersionParser", controller.getPreviewState(parser).g.name);
+		assertEquals("semver", controller.getPreviewState(parser).startRule());
+		assertEquals("SemanticVersionParser", controller.getPreviewState(parser).parserGrammar().name);
 	}
 
 	/** A lexer looked for but absent is an input too: creating it makes the parser's load stale. */
@@ -199,18 +198,18 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		FileUtil.rename(lexerFile, moved);
 		LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dir).refresh(false, true);
 		select(parser);
-		LexerGrammar missing = controller.getPreviewState(parser).lg;
+		LexerGrammar missing = controller.getPreviewState(parser).lexerGrammar();
 		assertTrue(missing==null || !"SemanticVersionLexer".equals(missing.name));
 		FileUtil.rename(moved, lexerFile);
 		LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dir).refresh(false, true);
 		assertTrue(GrammarCache.getInstance(getProject()).isStale(parser));
 		select(LocalFileSystem.getInstance().refreshAndFindFileByIoFile(lexerFile));
 		select(parser);
-		assertEquals("SemanticVersionLexer", controller.getPreviewState(parser).lg.name);
+		assertEquals("SemanticVersionLexer", controller.getPreviewState(parser).lexerGrammar().name);
 	}
 
-	/** Records today's behavior: the start rule is cleared, not reset to the first rule. */
-	public void testDeletingTheStartRuleClearsIt() {
+	/** A start rule deleted from the grammar falls back to the first rule. */
+	public void testDeletingTheStartRuleFallsBackToTheFirstRule() {
 		select(parser);
 		attachPanel();
 		controller.setStartRuleNameEvent(parser, "versionCore");
@@ -218,8 +217,8 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 			"versionCore\n    : major = NUMBER DOT minor = NUMBER DOT patch = NUMBER\n    ;\n", "")
 			.replace("versionCore (", "NUMBER ("));
 		PreviewState state = controller.getPreviewState(parser);
-		assertNull(state.g.getRule("versionCore"));
-		assertNull(state.startRuleName);
+		assertNull(state.parserGrammar().getRule("versionCore"));
+		assertEquals("tag", state.startRule());
 	}
 
 	public void testSavingTheLexerReloadsTheParserThatUsesIt() {
@@ -227,9 +226,9 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		attachPanel();
 		select(lexer);
 		editAndSave(lexer, text -> text + "\nTILDE : '~' ;\n");
-		assertNotNull(controller.getPreviewState(lexer).lg.getRule("TILDE"));
+		assertNotNull(controller.getPreviewState(lexer).lexerGrammar().getRule("TILDE"));
 		select(parser);
-		assertTrue(controller.getPreviewState(parser).lg.tokenNameToTypeMap.containsKey("TILDE"));
+		assertTrue(controller.getPreviewState(parser).lexerGrammar().tokenNameToTypeMap.containsKey("TILDE"));
 	}
 
 	/** Breaking the lexer (the parser's DOT no longer exists) shows up when parsing with the parser. */
@@ -241,13 +240,11 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertTrue(good.syntaxErrorListener.getSyntaxErrors().isEmpty());
 		select(lexer);
 		editAndSave(lexer, text -> text.replace("DOT  : '.';", "PERIOD : '.';"));
-		PreviewState state = controller.getPreviewState(parser);
-		ParsingResult before = state.parsingResult;
 		select(parser);
-		assertTrue(state.lg.tokenNameToTypeMap.containsKey("PERIOD"));
-		waitFor("reparse", () -> state.parsingResult!=before);
+		assertTrue(controller.getPreviewState(parser).lexerGrammar().tokenNameToTypeMap.containsKey("PERIOD"));
+		waitFor("reparse", () -> parsingResult(parser)!=null && parsingResult(parser)!=good);
 		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
-		assertFalse(state.parsingResult.syntaxErrorListener.getSyntaxErrors().isEmpty());
+		assertFalse(parsingResult(parser).syntaxErrorListener.getSyntaxErrors().isEmpty());
 	}
 
 	public void testClosingAGrammarReleasesItsInputEditor() {
@@ -257,22 +254,40 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertFalse(input.isDisposed());
 		controller.editorFileClosed(FileEditorManager.getInstance(getProject()), parser);
 		assertTrue(input.isDisposed());
-		assertFalse(controller.grammarToPreviewState.containsKey(parser));
+		assertFalse(controller.hasPreviewState(parser));
 	}
 
-	public void testDisposingThePanelReleasesAllInputEditors() {
+	/** One input editor at a time: switching grammars releases the previous one. */
+	public void testSwitchingGrammarsReleasesThePreviousInputEditor() {
 		select(parser);
 		attachPanel();
-		Editor parserInput = controller.getPreviewState(parser).getInputEditor();
+		Editor parserInput = panel.getInputPanel().getInputEditor();
 		select(lexer);
-		Editor lexerInput = controller.getPreviewState(lexer).getInputEditor();
+		Editor lexerInput = panel.getInputPanel().getInputEditor();
 		assertNotSame(parserInput, lexerInput);
+		assertTrue(parserInput.isDisposed());
 		assertFalse(lexerInput.isDisposed());
-		assertFalse(parserInput.isDisposed()); // today a grammar switched away from keeps its hidden editor
+	}
+
+	public void testDisposingThePanelReleasesTheInputEditor() {
+		select(parser);
+		attachPanel();
+		Editor input = panel.getInputPanel().getInputEditor();
 		Disposer.dispose(panel);
 		assertNull(controller.getPreviewPanel());
-		assertTrue(lexerInput.isDisposed());
-		assertTrue(parserInput.isDisposed());
+		assertTrue(input.isDisposed());
+	}
+
+	/** A finished parse belongs to the grammars and start rule it was made with. */
+	public void testParseResultIsDroppedWhenTheStartRuleChanges() {
+		select(parser);
+		attachPanel();
+		controller.setStartRuleNameEvent(parser, "semver");
+		assertNotNull(typeInput("1.2.3"));
+		controller.setStartRuleNameEvent(parser, "versionCore");
+		PreviewState state = controller.getPreviewState(parser);
+		assertEquals("versionCore", state.startRule());
+		assertNull(state.parsingResult()); // the reparse hasn't finished
 	}
 
 	// ------------------------------
@@ -297,19 +312,22 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 
 	/** Replaces the input text and waits for the reparse. */
 	private ParsingResult typeInput(String text) {
-		VirtualFile grammar = panel.getInputPanel().previewState.grammarFile;
-		ParsingResult before = controller.getPreviewState(grammar).parsingResult;
+		VirtualFile grammar = panel.getInputPanel().getGrammarFile();
+		ParsingResult before = parsingResult(grammar);
 		Document doc = panel.getInputPanel().getInputEditor().getDocument();
 		return awaitNewResult(grammar, before, () ->
 			WriteCommandAction.runWriteCommandAction(getProject(), () -> doc.setText(text)));
 	}
 
 	private ParsingResult awaitNewResult(VirtualFile grammar, ParsingResult before, Runnable action) {
-		PreviewState state = controller.getPreviewState(grammar);
 		action.run();
-		waitFor("reparse", () -> state.parsingResult!=null && state.parsingResult!=before);
+		waitFor("reparse", () -> parsingResult(grammar)!=null && parsingResult(grammar)!=before);
 		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
-		return state.parsingResult;
+		return parsingResult(grammar);
+	}
+
+	private ParsingResult parsingResult(VirtualFile grammar) {
+		return controller.getPreviewState(grammar).parsingResult();
 	}
 
 	/** Edits the grammar's document, saves it, and sends the save event (the VFS listener is off in tests). */

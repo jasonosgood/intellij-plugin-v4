@@ -59,12 +59,12 @@ public class ShowAmbigTreesDialog extends JDialog {
 	public static void popupAmbigTreesDialog(PreviewState previewState, AmbiguityInfo ambigInfo) {
 		// pop up subtrees for ambig intrepretation
 		ShowAmbigTreesDialog dialog = new ShowAmbigTreesDialog();
-		Parser parser = previewState.parsingResult.parser;
-		int startRuleIndex = parser.getRuleIndex(previewState.startRuleName);
+		Parser parser = previewState.parsingResult().parser;
+		int startRuleIndex = parser.getRuleIndex(previewState.startRule());
 		List<ParserRuleContext> ambiguousParseTrees = null;
 		try {
 			ambiguousParseTrees =
-				GrammarParserInterpreter.getAllPossibleParseTrees(previewState.g,
+				GrammarParserInterpreter.getAllPossibleParseTrees(previewState.parserGrammar(),
 				                                                  parser,
 				                                                  parser.getTokenStream(),
 				                                                  ambigInfo.decision,
@@ -81,7 +81,7 @@ public class ShowAmbigTreesDialog extends JDialog {
 		}
 
 		if ( ambiguousParseTrees!=null ) {
-			TokenStream tokens = previewState.parsingResult.parser.getInputStream();
+			TokenStream tokens = previewState.parsingResult().parser.getInputStream();
 			String phrase = tokens.getText(Interval.of(ambigInfo.startIndex, ambigInfo.stopIndex));
 			if ( phrase.length()>MAX_PHRASE_WIDTH ) {
 				phrase = phrase.substring(0, MAX_PHRASE_WIDTH)+"...";
@@ -108,10 +108,10 @@ public class ShowAmbigTreesDialog extends JDialog {
 	public static void popupLookaheadTreesDialog(PreviewState previewState, LookaheadEventInfo lookaheadInfo) {
 		// pop up subtrees for lookahead
 		ShowAmbigTreesDialog dialog = new ShowAmbigTreesDialog();
-		ParserInterpreter parser = (ParserInterpreter) previewState.parsingResult.parser;
-		int startRuleIndex = parser.getRuleIndex(previewState.startRuleName);
+		ParserInterpreter parser = (ParserInterpreter) previewState.parsingResult().parser;
+		int startRuleIndex = parser.getRuleIndex(previewState.startRule());
 		List<ParserRuleContext> lookaheadParseTrees =
-			GrammarParserInterpreter.getLookaheadParseTrees(previewState.g,
+			GrammarParserInterpreter.getLookaheadParseTrees(previewState.parserGrammar(),
 			                                                parser,
 			                                                parser.getTokenStream(),
 			                                                startRuleIndex,
@@ -170,7 +170,7 @@ public class ShowAmbigTreesDialog extends JDialog {
 				PreviewInterpreterRuleContext ctx = (PreviewInterpreterRuleContext) ambiguousParseTrees.get(i);
 				treeViewers[i] = new TrackpadZoomingTreeView(null, null, highlightDiffs); // && ctx != chosenTree);
 				AltLabelTextProvider treeText =
-					new AltLabelTextProvider(previewState.parsingResult.parser, previewState.g);
+					new AltLabelTextProvider(previewState.parsingResult().parser, previewState.parserGrammar());
 				treeViewers[i].setTreeTextProvider(treeText);
 				treeViewers[i].setTree(ctx);
 				treeViewers[i].setHighlightedBoxColor(new JBColor(JBColor.lightGray, JBColor.GREEN));

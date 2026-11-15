@@ -35,14 +35,9 @@ Found while writing them; decide during steps 2–4 whether to keep each behavio
 ### Step 3. Platform async in place of the hand-rolled loader: done (see DONE.md, item 38)
 Parses use `ReadAction.nonBlocking`; loads don't (they can't be cancelled); see DECISIONS.md.
 
-### Step 4. Immutable preview state, one owner
-`PreviewState` has public mutable fields shared by the UI thread and the loader, guarded with
-`synchronized`, and still holds the input `Editor` although the panel now owns editors.
-- Split it: an immutable snapshot record (grammar, lexer grammar, start rule, parse result)
-  replaced atomically, and per-grammar view state (input editor, input text) owned by the panel
-  on the EDT.
-- Prior art: immutable snapshots published by reference (the platform's own PSI/stub model;
-  React-style state). Each piece of mutable state has one owning thread.
+### Step 4. Immutable preview state, one owner: done (see DONE.md, item 39)
+`PreviewState` is a record replaced on the EDT; `InputPanel` owns one input editor and the text
+per grammar. Resolves the step 1 findings on the deleted start rule and hidden editors.
 
 ### Step 5. Split the controller; UI subscribes to a topic
 `ANTLRv4PluginController` (~720 lines) routes editor events, loads grammars, runs parses and

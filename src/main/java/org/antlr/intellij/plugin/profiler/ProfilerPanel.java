@@ -44,7 +44,8 @@ public class ProfilerPanel {
 	public static final Key<DecisionInfo> DECISION_INFO_KEY = Key.create("DECISION_INFO_KEY");
 
 	public Project project;
-	public PreviewState previewState;
+	/** The snapshot the profiled parse was made with; null until one is shown. EDT only. */
+	private PreviewState previewState;
 	public PreviewPanel previewPanel;
 
 	protected JPanel outerPanel;
@@ -97,12 +98,8 @@ public class ProfilerPanel {
 		}
 	}
 
-	public void grammarFileSaved(PreviewState previewState, VirtualFile grammarFile) {
-		// leave model and such alone.
-	}
-
-	public void switchToGrammar(PreviewState previewState, VirtualFile grammarFile) {
-		this.previewState = previewState;
+	public void switchToGrammar() {
+		this.previewState = null;
 		DefaultTableModel model = new DefaultTableModel();
 		profilerDataTable.setModel(model);
 		profilerDataTable.setAutoCreateRowSorter(true);
@@ -124,7 +121,7 @@ public class ProfilerPanel {
 
 	public void setProfilerData(PreviewState previewState, long parseTime_ns) {
 		this.previewState = previewState;
-		Parser parser = previewState.parsingResult.parser;
+		Parser parser = previewState.parsingResult().parser;
 		ParseInfo parseInfo = parser.getParseInfo();
 		updateTableModelPerExpertCheckBox(parseInfo,parser);
 		double parseTimeMS = parseTime_ns/(1000.0*1000.0);
@@ -178,13 +175,13 @@ public class ProfilerPanel {
 	}
 
 	public void selectDecisionInGrammar(PreviewState previewState, int decision) {
-		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(previewState.project);
+		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
 		if ( controller==null ) return;
-		final Editor grammarEditor = controller.getEditor(previewState.grammarFile);
+		final Editor grammarEditor = controller.getEditor(previewState.grammarFile());
 		if ( grammarEditor==null ) return;
 
-		DecisionState decisionState = previewState.g.atn.getDecisionState(decision);
-		Interval region = previewState.g.getStateToGrammarRegion(decisionState.stateNumber);
+		DecisionState decisionState = previewState.parserGrammar().atn.getDecisionState(decision);
+		Interval region = previewState.parserGrammar().getStateToGrammarRegion(decisionState.stateNumber);
 		if ( region==null ) {
 			System.err.println("decision "+decision+" has state "+decisionState.stateNumber+" but no region");
 			return;
@@ -192,14 +189,14 @@ public class ProfilerPanel {
 
 		InputPanel.removeHighlighters(grammarEditor, ProfilerPanel.DECISION_INFO_KEY);
 
-		org.antlr.runtime.TokenStream tokens = previewState.g.tokenStream;
+		org.antlr.runtime.TokenStream tokens = previewState.parserGrammar().tokenStream;
 		if ( region.a>=tokens.size() || region.b>=tokens.size() ) {
 			return;
 		}
 		CommonToken startToken = (CommonToken) tokens.get(region.a);
 		CommonToken stopToken = (CommonToken) tokens.get(region.b);
 		JBColor effectColor = JBColor.darkGray;
-		DecisionInfo decisionInfo = previewState.parsingResult.parser.getParseInfo().getDecisionInfo()[decision];
+		DecisionInfo decisionInfo = previewState.parsingResult().parser.getParseInfo().getDecisionInfo()[decision];
 		if ( decisionInfo.predicateEvals.size()>0 ) {
 			effectColor = new JBColor(PREDEVAL_COLOR, AMBIGUITY_COLOR);
 		}
@@ -230,18 +227,19 @@ public class ProfilerPanel {
 	}
 
 	public void highlightInputPhrases(PreviewState previewState, int decision) {
-		if ( previewState==null || previewState.parsingResult==null ) {
+		if ( previewState==null || previewState.parsingResult()==null ) {
 			return;
 		}
 
-		Editor inputEditor = previewState.getInputEditor();
+		Editor inputEditor = previewPanel.getInputPanel().getInputEditor();
+		if ( inputEditor==null ) return;
 		ScrollingModel scrollingModel = inputEditor.getScrollingModel();
 		CaretModel caretModel = inputEditor.getCaretModel();
 		MarkupModel markupModel = inputEditor.getMarkupModel();
 
 		InputPanel.clearDecisionEventHighlighters(inputEditor);
 
-		ParseInfo parseInfo = previewState.parsingResult.parser.getParseInfo();
+		ParseInfo parseInfo = previewState.parsingResult().parser.getParseInfo();
 		DecisionInfo decisionInfo = parseInfo.getDecisionInfo()[decision];
 
 		Token firstToken = null;
@@ -286,7 +284,7 @@ public class ProfilerPanel {
 	public Token addDecisionEventHighlighter(PreviewState previewState, MarkupModel markupModel,
 	                                         DecisionEventInfo info, Color errorStripeColor,
 	                                         EffectType effectType) {
-		TokenStream tokens = previewState.parsingResult.parser.getInputStream();
+		TokenStream tokens = previewState.parsingResult().parser.getInputStream();
 		Token startToken = tokens.get(info.startIndex);
 		Token stopToken = tokens.get(info.stopIndex);
 		TextAttributes textAttributes =
@@ -308,10 +306,10 @@ public class ProfilerPanel {
 	                                                     SemanticContext semctx,
 	                                                     int alt,
 	                                                     boolean result) {
-		Grammar g = previewState.g;
+		Grammar g = previewState.parserGrammar();
 		String semanticContextDisplayString = g.getSemanticContextDisplayString(semctx);
 		if ( semctx instanceof SemanticContext.PrecedencePredicate ) {
-			int ruleIndex = previewState.parsingResult.parser.getATN().decisionToState.get(pred.decision).ruleIndex;
+			int ruleIndex = previewState.parsingResult().parser.getATN().decisionToState.get(pred.decision).ruleIndex;
 			Rule rule = g.getRule(ruleIndex);
 			int precedence = ((SemanticContext.PrecedencePredicate) semctx).precedence;
 			// precedence = n - originalAlt + 1, So:
@@ -326,10 +324,10 @@ public class ProfilerPanel {
 		                                               boolean isSelected, boolean hasFocus,
 		                                               int row, int column) {
 			Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-			if ( previewState==null || previewState.parsingResult==null ) {
+			if ( previewState==null || previewState.parsingResult()==null ) {
 				return c;
 			}
-			ParseInfo parseInfo = previewState.parsingResult.parser.getParseInfo();
+			ParseInfo parseInfo = previewState.parsingResult().parser.getParseInfo();
 			int decision = profilerDataTable.convertRowIndexToModel(row);
 			DecisionInfo[] decisions = parseInfo.getDecisionInfo();
 			if ( decision>=decisions.length ) {
@@ -353,12 +351,12 @@ public class ProfilerPanel {
 		expertCheckBox = new JBCheckBox();
 		expertCheckBox.setSelected(false);
 		expertCheckBox.addActionListener(e -> {
-			if (previewState.parsingResult == null) {
+			if (previewState.parsingResult() == null) {
 				// nothing has been parsed yet (no text in the editor)
 				return;
 			}
-			ParseInfo parseInfo = previewState.parsingResult.parser.getParseInfo();
-			updateTableModelPerExpertCheckBox(parseInfo,previewState.parsingResult.parser);
+			ParseInfo parseInfo = previewState.parsingResult().parser.getParseInfo();
+			updateTableModelPerExpertCheckBox(parseInfo,previewState.parsingResult().parser);
 		});
 		profilerDataTable = new ProfilerJBTable();
 		ListSelectionModel selectionModel = profilerDataTable.getSelectionModel();
@@ -378,7 +376,7 @@ public class ProfilerPanel {
 							selectedRow = 0;
 						}
 						int decision = profilerDataTable.convertRowIndexToModel(selectedRow);
-						int numberOfDecisions = previewState.g.atn.getNumberOfDecisions();
+						int numberOfDecisions = previewState.parserGrammar().atn.getNumberOfDecisions();
 						if ( decision<=numberOfDecisions ) {
 							// a plain Swing event holds no lock; editors and documents need one
 							WriteIntentReadAction.run(() -> {

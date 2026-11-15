@@ -201,6 +201,21 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     tests' handle, now the load's own future including its UI follow-up. Two tests added: the
     newest input wins when parses overlap; breaking the lexer (a token the parser uses renamed)
     shows as syntax errors in the parser's preview.
+39. Greenfield step 4: immutable preview state, one owner. `PreviewState` is a record (parser
+    and lexer grammar, start rule, parse result) that the controller replaces whole, on the
+    EDT only; loads hand their grammars to the EDT instead of writing them on the loader thread.
+    A parse result is published only if the grammars and start rule it was made with are still
+    current; new grammars or a new start rule drop the old result. The profiler and the mouse
+    handlers keep one snapshot, so the grammar and parse they read belong together. `InputPanel`
+    owns one input editor (for the grammar shown) and the input text per grammar; switching
+    grammars releases the previous editor (before, each grammar switched away from kept a hidden
+    one). `RunANTLROnGrammarFile` reads grammars from `GrammarCache`. Start rule rules moved
+    into `PreviewState.withGrammars`: a start rule deleted from the grammar now falls back to
+    the first rule (before, it was cleared: a step 1 finding); a grammar that fails to load
+    keeps it. Removed: `synchronized`, `grammarToPreviewState` (public), `autoSetStartRule`,
+    `ensureStartRuleExists`, `INPUT_LISTENER_SCOPE`. Tests: 2 added (switching releases the
+    previous editor; a start rule change drops the old result), 2 changed (deleted start rule;
+    panel disposal).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

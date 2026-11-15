@@ -37,11 +37,14 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import org.antlr.v4.tool.Rule;
 import org.antlr.v4.tool.ast.GrammarAST;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 
 // Not a view itself but delegates to one.
@@ -71,10 +74,18 @@ public class InputPanel {
 
 	private final PreviewPanel previewPanel;
 
-	/**
-	 * state for grammar in current editor, not editor where user is typing preview input!
+	/** The grammar whose input is shown; null before the first one and after it closes. EDT only. */
+	private VirtualFile grammarFile;
+
+	/** The input editor for {@link #grammarFile}, created when first needed; one at a time. */
+	private Editor inputEditor;
+	/** Owns the listeners on {@link #inputEditor}'s document; disposed with the editor. */
+	private Disposable inputEditorScope;
+
+	/** Input text per grammar, saved when its editor is released and restored when it's shown
+	 *  again; dropped when the grammar closes. EDT only.
 	 */
-	public PreviewState previewState;
+	private final Map<VirtualFile, String> inputTexts = new HashMap<>();
 
 	private final PreviewEditorMouseListener editorMouseListener;
 
@@ -95,44 +106,34 @@ public class InputPanel {
 		return outerMostPanel;
 	}
 
-	public void selectInputEvent() {
-		previewPanel.clearParseTree();
-		clearErrorConsole();
-
-		// wipe old and make new one
-		if ( previewState!=null ) {
-			releaseEditor(previewState);
-			createManualInputPreviewEditor(previewState);
-		}
+	/** The grammar whose input is shown, or null. */
+	public @Nullable VirtualFile getGrammarFile() {
+		return grammarFile;
 	}
 
-	public void createManualInputPreviewEditor(final PreviewState previewState) {
-		final EditorFactory factory = EditorFactory.getInstance();
-		Document doc = factory.createDocument("");
-		Editor editor = createPreviewEditor(previewState.grammarFile, doc);
-		// Scoped like the editor's reparse listener; released with the editor.
-		doc.addDocumentListener(
-			new DocumentListener() {
-				@Override
-				public void documentChanged(@NotNull DocumentEvent e) {
-					previewState.manualInputText = e.getDocument().getCharsSequence();
-				}
-			},
-			editor.getUserData(PreviewState.INPUT_LISTENER_SCOPE)
-		);
-		setEditorComponent(editor.getComponent()); // do before setting state
-		previewState.setInputEditor(editor);
+	/** The current snapshot of the grammar whose input is shown, or null. */
+	public @Nullable PreviewState previewState() {
+		if ( grammarFile==null ) return null;
+		return ANTLRv4PluginController.getInstance(previewPanel.project).getPreviewState(grammarFile);
+	}
+
+	private void createInputEditor() {
+		Document doc = EditorFactory.getInstance().createDocument("");
+		inputEditorScope = Disposer.newDisposable(previewPanel, "ANTLR preview input listeners");
+		inputEditor = createPreviewEditor(grammarFile, doc, inputEditorScope);
+		setEditorComponent(inputEditor.getComponent());
 
 		// Set text last to trigger change events
-		ApplicationManager.getApplication().runWriteAction(() -> doc.setText(previewState.manualInputText));
+		String text = inputTexts.getOrDefault(grammarFile, "");
+		ApplicationManager.getApplication().runWriteAction(() -> doc.setText(text));
 	}
 
-	public Editor createPreviewEditor(final VirtualFile grammarFile, Document doc) {
+	/** An input editor for {@code doc} that reparses on each change; {@code listenerScope} (a
+	 *  child of the panel, as backstop) owns its listener and is disposed with the editor, so the
+	 *  listener never fires with a stale grammar after the editor is gone.
+	 */
+	private Editor createPreviewEditor(final VirtualFile grammarFile, Document doc, Disposable listenerScope) {
 		LOG.info("createEditor: create new editor for "+grammarFile.getPath()+" "+previewPanel.project.getName());
-		final EditorFactory factory = EditorFactory.getInstance();
-		// Scope the listener to the editor (PreviewState.releaseEditor disposes it), with the
-		// panel as backstop, so it never fires with a stale grammar after the editor is gone.
-		Disposable listenerScope = Disposer.newDisposable(previewPanel, "ANTLR preview input listeners");
 		doc.addDocumentListener(
 			new DocumentListener() {
 				@Override
@@ -142,8 +143,7 @@ public class InputPanel {
 			},
 			listenerScope
 		);
-		final Editor editor = factory.createEditor(doc, previewPanel.project);
-		editor.putUserData(PreviewState.INPUT_LISTENER_SCOPE, listenerScope);
+		final Editor editor = EditorFactory.getInstance().createEditor(doc, previewPanel.project);
 		// force right margin
 		((EditorMarkupModel) editor.getMarkupModel()).setErrorStripeVisible(true);
 		EditorSettings settings = editor.getSettings();
@@ -157,29 +157,42 @@ public class InputPanel {
 
 	public void grammarFileSaved() {
 		clearParseErrors();
-		if ( previewState!=null && previewState.startRuleName!=null ) {
-			setStartRuleName(previewState.grammarFile, previewState.startRuleName);
+		PreviewState previewState = previewState();
+		if ( previewState!=null && previewState.startRule()!=null ) {
+			setStartRuleName(previewState.grammarFile(), previewState.startRule());
 		}
 		else {
 			resetStartRuleLabel();
 		}
 	}
 
-	public void switchToGrammar(PreviewState previewState, VirtualFile grammarFile) {
-		String grammarFileName = grammarFile.getPath();
-		LOG.info("switchToGrammar "+grammarFileName+" "+previewPanel.project.getName());
-		this.previewState = previewState;
-
-		selectInputEvent();
+	/** Shows {@code grammarFile}'s input in a new editor; the previous grammar's text is kept. */
+	public void switchToGrammar(VirtualFile grammarFile) {
+		LOG.info("switchToGrammar "+grammarFile.getPath()+" "+previewPanel.project.getName());
+		releaseEditor();
+		this.grammarFile = grammarFile;
+		previewPanel.clearParseTree();
+		clearErrorConsole();
+		createInputEditor();
 
 		clearParseErrors();
 
-		if ( previewState.startRuleName!=null ) {
-			setStartRuleName(grammarFile, previewState.startRuleName);
+		String startRule = previewState().startRule();
+		if ( startRule!=null ) {
+			setStartRuleName(grammarFile, startRule);
 		}
 		else {
 			resetStartRuleLabel();
 		}
+	}
+
+	/** {@code grammarFile} closed: forget its input, and release its editor if it's shown. */
+	public void closeGrammar(VirtualFile grammarFile) {
+		if ( grammarFile.equals(this.grammarFile) ) {
+			releaseEditor();
+			this.grammarFile = null;
+		}
+		inputTexts.remove(grammarFile);
 	}
 
 	public void setEditorComponent(JComponent editor) {
@@ -196,27 +209,29 @@ public class InputPanel {
 		}
 	}
 
+	/** The input editor of the grammar shown, created if needed; null if no grammar is shown. */
 	public Editor getInputEditor() {
-		if ( previewState==null ) {
+		if ( grammarFile==null ) {
 			// seems there are some out of sequence issues with InputPanels
-			// being created but before we get a switchToGrammar event, which
-			// creates the previewState.
+			// being created but before we get a switchToGrammar event
 			return null;
 		}
-		Editor editor = previewState.getInputEditor();
-		if ( editor==null ) {
-			createManualInputPreviewEditor(previewState); // ensure we always have an input window
-			editor = previewState.getInputEditor();
+		if ( inputEditor==null ) {
+			createInputEditor(); // ensure we always have an input window
 		}
-
-		return editor;
+		return inputEditor;
 	}
 
-	public void releaseEditor(PreviewState previewState) {
-		uninstallListeners(previewState.getInputEditor());
-
-		// release the editor
-		previewState.releaseEditor();
+	/** Releases the input editor, if any, keeping its text for its grammar. */
+	public void releaseEditor() {
+		if ( inputEditor!=null ) {
+			inputTexts.put(grammarFile, inputEditor.getDocument().getText());
+			uninstallListeners(inputEditor);
+			Disposer.dispose(inputEditorScope); // removes the input document listener
+			EditorFactory.getInstance().releaseEditor(inputEditor);
+			inputEditor = null;
+			inputEditorScope = null;
+		}
 
 		// restore the GUI
 		setEditorComponent(placeHolder);
@@ -252,10 +267,7 @@ public class InputPanel {
 	}
 
 	public void resetStartRuleLabel() {
-		String grammarName = "?.g4";
-		if ( previewState!=null ) {
-			grammarName = previewState.grammarFile.getName();
-		}
+		String grammarName = grammarFile!=null ? grammarFile.getName() : "?.g4";
 		startRuleLabel.setText(String.format(missingStartRuleLabelText, grammarName));
 		startRuleLabel.setForeground(JBColor.RED);
 		startRuleLabel.setIcon(Icons.FILE);
@@ -333,7 +345,7 @@ public class InputPanel {
 	public void showTokenInfoUponCtrlKey(Editor editor, PreviewState previewState, int offset) {
 		Token tokenUnderCursor = ParsingUtils.getTokenUnderCursor(previewState, offset);
 		if ( tokenUnderCursor==null ) {
-			PreviewParser parser = (PreviewParser) previewState.parsingResult.parser;
+			PreviewParser parser = (PreviewParser) previewState.parsingResult().parser;
 			CommonTokenStream tokenStream = (CommonTokenStream) parser.getInputStream();
 			tokenUnderCursor = ParsingUtils.getSkippedTokenUnderCursor(tokenStream, offset);
 		}
@@ -352,7 +364,7 @@ public class InputPanel {
 		String tokenInfo =
 			String.format("#%d Type %s, Line %d:%d%s",
 			              tokenUnderCursor.getTokenIndex(),
-			              previewState.g.getTokenDisplayName(tokenUnderCursor.getType()),
+			              previewState.parserGrammar().getTokenDisplayName(tokenUnderCursor.getType()),
 			              tokenUnderCursor.getLine(),
 			              tokenUnderCursor.getCharPositionInLine(),
 			              channelInfo
@@ -378,7 +390,7 @@ public class InputPanel {
 			return;
 		}
 
-		ParseTree tree = previewState.parsingResult.tree;
+		ParseTree tree = previewState.parsingResult().tree;
 		TerminalNode nodeWithToken =
 			(TerminalNode) ParsingUtils.getParseTreeNodeWithToken(tree, tokenUnderCursor);
 		if ( nodeWithToken==null ) {
@@ -386,7 +398,7 @@ public class InputPanel {
 			return;
 		}
 
-		PreviewParser parser = (PreviewParser) previewState.parsingResult.parser;
+		PreviewParser parser = (PreviewParser) previewState.parsingResult().parser;
 		CommonTokenStream tokenStream = (CommonTokenStream) parser.getInputStream();
 		ParserRuleContext parent = (ParserRuleContext) nodeWithToken.getParent();
 		Interval tokenInterval = parent.getSourceInterval();
@@ -461,16 +473,16 @@ public class InputPanel {
 			return;
 		}
 
-		PreviewParser parser = (PreviewParser) previewState.parsingResult.parser;
+		PreviewParser parser = (PreviewParser) previewState.parsingResult().parser;
 		Integer atnState = parser.inputTokenToStateMap.get(tokenUnderCursor);
 		if ( atnState==null ) { // likely an error token
 			//LOG.error("no ATN state for input token " + tokenUnderCursor);
 			return;
 		}
 
-		Interval region = previewState.g.getStateToGrammarRegion(atnState);
+		Interval region = previewState.parserGrammar().getStateToGrammarRegion(atnState);
 		CommonToken token =
-			(CommonToken) previewState.g.tokenStream.get(region.a);
+			(CommonToken) previewState.parserGrammar().tokenStream.get(region.a);
 		jumpToGrammarPosition(project, token.getStartIndex());
 	}
 
@@ -480,7 +492,7 @@ public class InputPanel {
 			return;
 		}
 
-		ParseTree tree = previewState.parsingResult.tree;
+		ParseTree tree = previewState.parsingResult().tree;
 		TerminalNode nodeWithToken =
 			(TerminalNode) ParsingUtils.getParseTreeNodeWithToken(tree, tokenUnderCursor);
 		if ( nodeWithToken==null ) {
@@ -490,7 +502,7 @@ public class InputPanel {
 
 		ParserRuleContext parent = (ParserRuleContext) nodeWithToken.getParent();
 		int ruleIndex = parent.getRuleIndex();
-		Rule rule = previewState.g.getRule(ruleIndex);
+		Rule rule = previewState.parserGrammar().getRule(ruleIndex);
 		GrammarAST ruleNameNode = (GrammarAST) rule.ast.getChild(0);
 		int start = ((CommonToken) ruleNameNode.getToken()).getStartIndex();
 
@@ -499,8 +511,8 @@ public class InputPanel {
 
 	public void jumpToGrammarPosition(Project project, int start) {
 		final ANTLRv4PluginController controller = ANTLRv4PluginController.getInstance(project);
-		if ( controller==null ) return;
-		final Editor grammarEditor = controller.getEditor(previewState.grammarFile);
+		if ( controller==null || grammarFile==null ) return;
+		final Editor grammarEditor = controller.getEditor(grammarFile);
 		if ( grammarEditor==null ) return;
 
 		CaretModel caretModel = grammarEditor.getCaretModel();
@@ -518,7 +530,7 @@ public class InputPanel {
 	 * Display syntax errors, hints in tooltips if under the cursor
 	 */
 	public static void showTooltips(Editor editor, @NotNull PreviewState previewState, int offset) {
-		if ( previewState.parsingResult==null ) return; // no results?
+		if ( previewState.parsingResult()==null ) return; // no results?
 
 		// Turn off any tooltips if none under the cursor
 		// find the highlighter associated with this offset

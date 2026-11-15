@@ -40,23 +40,21 @@ import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.antlr.intellij.plugin.preview.PreviewPanel;
 import org.antlr.intellij.plugin.preview.PreviewState;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
-import org.antlr.v4.tool.Grammar;
-import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.concurrency.CancellablePromise;
 import org.jetbrains.annotations.TestOnly;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 /** This object is the controller for the ANTLR plug-in. It receives
  *  events and can send them on to its contained components. For example,
@@ -101,9 +99,12 @@ public final class ANTLRv4PluginController implements Disposable {
 	/** Grammar attachPreviewPanel() replayed a selection for; the platform's own event for it is skipped. EDT only. */
 	private VirtualFile replayedStartupGrammar;
 
-	/** Preview state per grammar file; keyed by file, not path, so state follows renames and moves. */
-	public final Map<VirtualFile, PreviewState> grammarToPreviewState =
-		Collections.synchronizedMap(new HashMap<>());
+	/** Preview state per grammar file; keyed by file, not path, so state follows renames and
+	 *  moves. Written on the EDT only, by replacing a grammar's immutable snapshot; read from any
+	 *  thread. Prior art: one owning thread per piece of mutable state (the platform's threading
+	 *  model); the concurrent map only publishes snapshots safely to background readers.
+	 */
+	private final Map<VirtualFile, PreviewState> previewStates = new ConcurrentHashMap<>();
 	/** The preview tool window's panel, while it exists; EDT only. */
 	private PreviewPanel previewPanel;
 
@@ -231,8 +232,7 @@ public final class ANTLRv4PluginController implements Disposable {
 	 */
 	public void setStartRuleNameEvent(VirtualFile grammarFile, String startRuleName) {
 		LOG.info("setStartRuleNameEvent " + startRuleName+" "+project.getName());
-		PreviewState previewState = getPreviewState(grammarFile);
-		previewState.startRuleName = startRuleName;
+		updatePreviewState(grammarFile, s -> s.withStartRule(startRuleName));
 		if ( previewPanel!=null ) {
 			previewPanel.getInputPanel().setStartRuleName(grammarFile, startRuleName); // notify the view
 			previewPanel.updateParseTreeFromDoc(grammarFile);
@@ -248,28 +248,28 @@ public final class ANTLRv4PluginController implements Disposable {
 			() -> {
 				GrammarCache cache = GrammarCache.getInstance(project);
 				boolean savedStale = cache.isStale(grammarFile);
-				List<PreviewState> dependents = new ArrayList<>();
-				for (PreviewState s : grammarToPreviewState.values().toArray(new PreviewState[0])) {
-					if ( s.grammarFile.equals(grammarFile) ) continue;
-					GrammarCache.Loaded loaded = cache.peek(s.grammarFile);
-					if ( loaded!=null && loaded.dependsOn(grammarFile) && cache.isStale(s.grammarFile) ) {
-						dependents.add(s);
-					}
-				}
+				List<VirtualFile> dependents = previewStates.keySet().stream()
+					.filter(f -> !f.equals(grammarFile))
+					.filter(f -> {
+						GrammarCache.Loaded loaded = cache.peek(f);
+						return loaded!=null && loaded.dependsOn(grammarFile) && cache.isStale(f);
+					})
+					.toList();
 				if ( !savedStale && dependents.isEmpty() ) {
 					LOG.debug("grammarFileSavedEvent "+grammarFile.getPath()+": no grammar changed");
-					return false;
+					return null;
 				}
 				LOG.info("grammarFileSavedEvent "+grammarFile.getPath()+" "+project.getName());
-				loadGrammar(grammarFile);
+				Map<VirtualFile, GrammarCache.Loaded> loads = new LinkedHashMap<>();
+				loads.put(grammarFile, cache.get(grammarFile));
 				if ( !dependents.isEmpty() ) {
 					// a lexer or imported grammar: regenerate its .tokens file for the grammars using it
 					runANTLRTool(grammarFile);
 				}
-				for (PreviewState s : dependents) {
-					loadGrammar(s.grammarFile);
+				for (VirtualFile f : dependents) {
+					loads.put(f, cache.get(f));
 				}
-				return true;
+				return loads;
 			},
 			() -> {
 				if ( previewPanel!=null ) {
@@ -309,10 +309,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		// Loads newFile unless its cached grammars are fresh; if the grammar switched away from
 		// was edited, editorSelectionChanged saved it, which makes grammars using it stale.
 		runGrammarLoad(
-			() -> {
-				loadGrammar(newFile);
-				return true;
-			},
+			() -> Map.of(newFile, GrammarCache.getInstance(project).get(newFile)),
 			() -> {
 				if ( previewPanel!=null ) {
 					previewPanel.grammarFileChanged(newFile);
@@ -320,15 +317,21 @@ public final class ANTLRv4PluginController implements Disposable {
 			});
 	}
 
-	/** Run {@code load} on the grammar loader thread; if it returns true, run
-	 *  {@code thenOnEdt} on the EDT afterwards. Both are skipped once this service is disposed.
+	/** Run {@code load} on the grammar loader thread; unless it returns null, put the grammars
+	 *  it loaded into the preview states and run {@code thenOnEdt}, both on the EDT. Skipped once
+	 *  this service is disposed.
 	 */
-	private void runGrammarLoad(BooleanSupplier load, Runnable thenOnEdt) {
+	private void runGrammarLoad(Supplier<Map<VirtualFile, GrammarCache.Loaded>> load, Runnable thenOnEdt) {
 		if ( lifetime.isDisposed() ) return; // the loader is shut down
 		AppUIExecutor edt = AppUIExecutor.onUiThread(ModalityState.defaultModalityState()).expireWith(lifetime);
 		lastGrammarLoad = CompletableFuture
-			.supplyAsync(() -> !lifetime.isDisposed() && load.getAsBoolean(), grammarLoader)
-			.thenAcceptAsync(loaded -> { if ( loaded ) thenOnEdt.run(); }, edt::execute)
+			.supplyAsync(() -> lifetime.isDisposed() ? null : load.get(), grammarLoader)
+			.thenAcceptAsync(loads -> {
+				if ( loads==null ) return;
+				loads.forEach((file, loaded) ->
+					updatePreviewState(file, s -> s.withGrammars(loaded.lexer(), loaded.parser())));
+				thenOnEdt.run();
+			}, edt::execute)
 			.whenComplete((ignored, t) -> {
 				if ( t!=null && !lifetime.isDisposed() ) { // teardown can break a load midway; ignore that
 					LOG.error("Failed to load grammar", t instanceof CompletionException ? t.getCause() : t);
@@ -361,19 +364,12 @@ public final class ANTLRv4PluginController implements Disposable {
 		}
 
 		// Dispose of state, editor, and such for this file
-		PreviewState previewState = grammarToPreviewState.get(vfile);
-		if ( previewState==null ) { // project closing must have done already
+		if ( previewStates.remove(vfile)==null ) { // project closing must have done already
 			return;
 		}
-
-		previewState.g = null; // wack old ref to the Grammar for text in editor
-		previewState.lg = null;
-
 		if ( previewPanel!=null ) {
 			previewPanel.closeGrammar(vfile);
 		}
-
-		grammarToPreviewState.remove(vfile);
 		GrammarCache.getInstance(project).remove(vfile);
 
 		// close tool window
@@ -390,7 +386,7 @@ public final class ANTLRv4PluginController implements Disposable {
 		}
 	}
 
-	/** Make sure to run after updating grammars in previewState */
+	/** Make sure to run after loading the grammar into the {@link GrammarCache}. */
 	public void runANTLRTool(final VirtualFile grammarFile) {
 		String title = "ANTLR Code Generation";
 		boolean canBeCancelled = true;
@@ -404,51 +400,40 @@ public final class ANTLRv4PluginController implements Disposable {
 		ProgressManager.getInstance().run(gen);
 	}
 
-	/** Puts the grammars loaded from {@code grammarFile} (cached if fresh) into its preview
-	 *  state. Grammar loader thread only.
-	 */
-	private void loadGrammar(VirtualFile grammarFile) {
-		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).get(grammarFile);
-		PreviewState previewState = getPreviewState(grammarFile);
-		synchronized (previewState) { // build atomically
-			previewState.lg = loaded.lexer();
-			previewState.g = loaded.parser();
-		}
-	}
-
 	/** Parses {@code inputText} with the grammar's start rule in the background and shows the
 	 *  result in the panel. A newer parse cancels this one; disposing the panel cancels it.
 	 *  The parse runs in a non-blocking read action: {@code PreviewParser} checks for
 	 *  cancellation at every decision, so a write action cancels and restarts it rather than
 	 *  waiting for it. Prior art: the platform's threading guide ({@code ReadAction.nonBlocking}
 	 *  with {@code coalesceBy}, {@code expireWith}, {@code finishOnUiThread}).
+	 *  <p>
+	 *  The parse uses the grammar's snapshot taken now. Its result is published only if the
+	 *  grammars and start rule are still those when it finishes; if they changed, the change
+	 *  started another parse. EDT only.
 	 */
 	public void parseText(final VirtualFile grammarFile, String inputText) {
-		final PreviewState previewState = getPreviewState(grammarFile);
+		ApplicationManager.getApplication().assertIsDispatchThread();
 		final PreviewPanel panel = previewPanel;
 		if ( panel==null ) return; // nothing to show the result in
 
 		// No need to parse empty text during unit tests, yet...
 		if (inputText.isEmpty() && ApplicationManager.getApplication().isUnitTestMode()) return;
 
-		final Grammar g;
-		final LexerGrammar lg;
-		synchronized (previewState) { // a consistent pair; a load may be replacing them
-			g = previewState.g;
-			lg = previewState.lg;
-		}
-		final String startRuleName = previewState.startRuleName;
+		final PreviewState snapshot = getPreviewState(grammarFile);
 		CancellablePromise<Parse> promise = ReadAction
 			.nonBlocking(() -> {
 				long start = System.nanoTime();
-				ParsingResult result = ParsingUtils.parseText(g, lg, startRuleName, grammarFile, inputText, project);
+				ParsingResult result = ParsingUtils.parseText(snapshot.parserGrammar(), snapshot.lexerGrammar(),
+															  snapshot.startRule(), grammarFile, inputText, project);
 				return new Parse(result, System.nanoTime() - start);
 			})
 			.coalesceBy(this, panel) // one parse at a time per panel; the newest input wins
 			.expireWith(panel)
 			.finishOnUiThread(ModalityState.defaultModalityState(), parse -> {
-				previewState.parsingResult = parse.result();
-				panel.onParsingCompleted(previewState, parse.nanos());
+				if ( !getPreviewState(grammarFile).sameInputsAs(snapshot) ) return; // superseded
+				PreviewState parsed = snapshot.withParsingResult(parse.result());
+				previewStates.put(grammarFile, parsed);
+				panel.onParsingCompleted(parsed, parse.nanos());
 			})
 			.submit(AppExecutorUtil.getAppExecutorService());
 		parsing = promise;
@@ -502,9 +487,22 @@ public final class ANTLRv4PluginController implements Disposable {
 		return ToolWindowManager.getInstance(project).getToolWindow(PREVIEW_WINDOW_ID);
 	}
 
-	public @NotNull PreviewState getPreviewState(VirtualFile grammarFile) {
-		// atomic because the EDT and the grammar loader both get here
-		return grammarToPreviewState.computeIfAbsent(grammarFile, k -> new PreviewState(project, grammarFile));
+	/** The preview state of {@code grammarFile}, empty if it isn't loaded. Any thread. */
+	public @NotNull PreviewState getPreviewState(@NotNull VirtualFile grammarFile) {
+		PreviewState state = previewStates.get(grammarFile);
+		return state!=null ? state : PreviewState.empty(grammarFile);
+	}
+
+	/** Whether the preview holds state for {@code grammarFile}; closing a grammar drops it. */
+	@TestOnly
+	public boolean hasPreviewState(@NotNull VirtualFile grammarFile) {
+		return previewStates.containsKey(grammarFile);
+	}
+
+	/** Replaces the preview state of {@code grammarFile}. EDT only. */
+	private void updatePreviewState(@NotNull VirtualFile grammarFile, UnaryOperator<PreviewState> update) {
+		ApplicationManager.getApplication().assertIsDispatchThread();
+		previewStates.put(grammarFile, update.apply(getPreviewState(grammarFile)));
 	}
 
 	public Editor getEditor(VirtualFile vfile) {
@@ -524,24 +522,6 @@ public final class ANTLRv4PluginController implements Disposable {
 	}
 
 
-	/** Get the state information associated with the grammar in the current
-	 *  editor window. If there is no grammar in the editor window, return null.
-	 *  If there is a grammar, return any existing preview state else
-	 *  create a new one in store in the map.
-	 *
-	 *  Too dangerous; turning off but might be useful later.
-	public @org.jetbrains.annotations.Nullable PreviewState getPreviewState() {
-		VirtualFile currentGrammarFile = getCurrentGrammarFile();
-		if ( currentGrammarFile==null ) {
-			return null;
-		}
-		String currentGrammarFileName = currentGrammarFile.getPath();
-		if ( currentGrammarFileName==null ) {
-			return null; // we are not looking at a grammar file
-		}
-		return getPreviewState(currentGrammarFile);
-	}
-	 */
 
 	// These "get current editor file" routines should only be used
 	// when you are sure the user is in control and is viewing the
