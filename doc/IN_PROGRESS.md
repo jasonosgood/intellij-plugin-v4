@@ -17,16 +17,17 @@ Goal: the shape a new plugin would have, reached in small steps, each with tests
 check, each committed on its own. Order matters: 1 makes the rest safe; 2 and 3 remove the most
 hand-written threading code; 4–6 are cleanup on top.
 
-### Step 1. Characterization tests for the preview
-The preview has almost no tests (`Issue559Test` only), and steps 2–4 rewrite it.
-- Light fixture tests that build a `PreviewPanel` against the test root disposable (as
-  `Issue559Test` does) and drive it: select grammar, set start rule, type input, switch grammar
-  and back (input and start rule restored), edit and save the grammar, close the grammar.
-- Cover a split lexer/parser pair with `tokenVocab` (grammars-v4 `semver`, copied into test
-  resources with its license), since that is where loading is subtle.
-- Measure load and parse time of `oracle_normal.g4` once, as the baseline for steps 2–3.
-- Assert on the model (parse result, rule names, errors), not on Swing.
-- Prior art: "characterization tests" (Feathers) before refactoring legacy code.
+### Step 1. Characterization tests for the preview: done (see DONE.md)
+Found while writing them; decide during steps 2–4 whether to keep each behavior:
+- Deleting the selected start rule and saving clears the start rule ("no start rule") instead
+  of falling back to the first rule: `grammarFileSaved` runs `autoSetStartRule` before
+  `ensureStartRuleExists`. Likely a bug.
+- A grammar switched away from keeps its hidden input editor until it is switched back to
+  (then the editor is recreated) or closed. Step 4 should keep one editor per visible grammar
+  and keep only the text per grammar.
+- Parsing a one-line query on `oracle_normal.g4` takes ~330 ms, because the preview parses
+  with exact ambiguity detection and profiling on. Consider profiling only when the Profiler
+  tab is shown.
 
 ### Step 2. Grammars as cached values of their files
 Today grammars are keyed by path string and reloaded on VFS save events, with modification

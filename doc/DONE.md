@@ -2,7 +2,7 @@
 
 Completed work on branch `grammar-tools`, oldest first. Item numbers are kept from the original
 worklog because entries refer to each other by number. Open work is in
-[IN_PROGRESS.md](IN_PROGRESS.md).
+[IN_PROGRESS.md](IN_PROGRESS.md); settled decisions in [DECISIONS.md](DECISIONS.md).
 
 ## Extract Rule, 2026.2 baseline, antlr4-xl tools
 
@@ -166,6 +166,19 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
       late shows the selected grammar; Test Rule with the preview closed keeps the start rule;
       input kept per grammar across switches; Tool Output shows generation output; project
       close disposes cleanly with no errors.
+36. Greenfield step 1: characterization tests for the preview (`preview/PreviewPanelTest`,
+    12 tests) on grammars-v4 `semver`, copied with its MIT license into
+    `src/test/resources/preview/semver`. They build a `PreviewPanel` as the tool window does
+    and assert on preview state and parse results: parser + `tokenVocab` lexer loading, first
+    rule as default start rule, a panel attached late, parsing and syntax errors, start rule
+    changes, input and start rule kept per grammar across switches, lexer grammar alone (no
+    parser), save reloads, a saved lexer reloading the parser that uses it, deleting the start
+    rule, closing a grammar and disposing the panel releasing editors. The grammars are copied
+    to a real temp directory, since loading checks files through `java.io.File`. Stable over
+    repeated runs.
+    - Speed baseline (`PreviewPerformanceTest`, run with `ANTLR_PERF=1`): `oracle_normal.g4`
+      (10,587 lines, 1,830 rules) loads in ~3.2 s warm (3.9 s cold) and parses a one-line
+      query in ~330 ms (650 ms cold).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.
@@ -215,26 +228,3 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
 - README: live templates section removed; lint, format, sort and the submodule checkout step
   added. ARCHITECTURE: grammar tools section, IntelliJ Platform Gradle Plugin 2.x, tool window
   ownership.
-
-## Decisions (settled; reopen only with a reason)
-- **Two meta-grammars (10).** The plugin's `ANTLRv4Parser.g4` drives the PSI (34 source files
-  depend on its rules and tokens) and has IDE needs (lexer modes for actions, error recovery);
-  xl's `ANTLR4.g4` is the owner's rewrite and off-limits without permission. Prior art:
-  google-java-format and ktfmt keep their own parsers apart from IntelliJ's PSI; the seam is
-  text. The risk is drift, so `xl/MetaGrammarAgreementTest` checks that both parsers accept or
-  reject the same grammars (test resources + xl's tests; set `GRAMMARS_V4` to add grammars-v4).
-  On grammars-v4 (1,102 files) it found a plugin parser bug, now fixed: lexer alternatives made
-  only of commands (`OTHER : -> mode(DEFAULT_MODE) ;`) were syntax errors in the editor. Known
-  difference: xl rejects labels in lexer rules (`LexerElementLabel.g4`), as ANTLR does.
-- **Format after sort: no (9).** Separate commands; reformat-on-save covers it. Prior art:
-  IntelliJ's Rearrange Code is separate from Reformat Code.
-- **Extract Rule's `update()` doesn't check the selection's shape (30).** Matches the platform
-  (Extract Method stays enabled and explains a bad selection).
-- **Duplicate unused-rule warnings.** Reported by both the plugin's checks and xl's lint3, on
-  purpose: the prior errors and warnings stay until the linter can replace every kind of them.
-- **Platform warning "use project as a parent disposable" (32)**, about once per project open,
-  no stack trace; comes from the platform, not this plugin. Ignore.
-- **Preview input from a file (33)** never worked; removed (radio buttons, file chooser,
-  `PreviewState.inputFile`). Input is typed or pasted. This also drops the verifier's
-  experimental `BrowseFolderRunnable` use.
-- **No CI.** Work is local and experimental; `.github/` is left alone.

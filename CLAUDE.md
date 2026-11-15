@@ -18,25 +18,31 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   modify its meta-grammar `ANTLR4.g4` without explicit permission. Commit there on branch
   `plugin-linter-api`.
 - Keep the two meta-grammars apart (plugin `ANTLRv4Parser.g4` for the PSI, xl `ANTLR4.g4` for
-  the tools); `MetaGrammarAgreementTest` guards against drift. See [doc/DONE.md](doc/DONE.md#decisions-settled-reopen-only-with-a-reason).
+  the tools); `MetaGrammarAgreementTest` guards against drift. See [doc/DECISIONS.md](doc/DECISIONS.md).
 - Don't publish personal details (names, emails, home paths) in committed files.
 
 ## Build and run
 - Target: IntelliJ 2026.2.1 (since-build 262), Java 25 toolchain, Gradle 9.7, IntelliJ Platform
   Gradle Plugin 2.x. Clone with `--recurse-submodules` (or `git submodule update --init`).
-- `./gradlew test`: all tests (115, light fixtures plus plain JUnit).
+- `./gradlew test`: all tests (128, light fixtures plus plain JUnit). Add `--rerun` to force a
+  rerun when Gradle thinks the task is up to date. `ANTLR_PERF=1` also runs
+  `PreviewPerformanceTest` (load and parse times on `oracle_normal.g4`).
 - Sandbox IDE: `scripts/launch-sandbox.sh [--restart] [--no-build] [--no-project | PROJECT_DIR]`
   (macOS, Apple silicon; ~10 s) or `./gradlew runIde` (anywhere; ~60 s). Its log:
   `.intellijPlatform/sandbox/intellij-plugin-v4/IU-2026.2.1/log/idea.log`. Never rebuild
   (`prepareSandbox`) under a running sandbox: the IDE half-reloads the plugin. Use `--restart`.
 - `./gradlew verifyPlugin`: Plugin Verifier against the build IDE.
 - `-Pantlr4XlDir=...` builds against another antlr4-xl checkout.
+- Keep Gradle output out of context: run with `-q` or pipe through `tail -30`; on failure, grep
+  the report or `build/test-results/test/*.xml` for the failing tests, not the whole log. Read
+  large files (the controller, `idea.log`) by range, not whole.
 
 ## Docs
 - [README.md](README.md): features and usage for users.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the plugin is built: PSI, preview, grammar tools.
 - [doc/IN_PROGRESS.md](doc/IN_PROGRESS.md): current work, the greenfield plan, tabled items.
-- [doc/DONE.md](doc/DONE.md): completed work and settled decisions.
+- [doc/DECISIONS.md](doc/DECISIONS.md): settled decisions; read before reopening one.
+- [doc/DONE.md](doc/DONE.md): completed work, a history log; read only when an item number is cited.
 - [antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md): the submodule's own guide; its plans and reports
   are in [antlr4-xl/docs/superpowers/plans/](antlr4-xl/docs/superpowers/plans/).
 - [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): upstream's PR checklist
@@ -51,5 +57,7 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   editors were released; keep it that way: editors belong to the UI that shows them (tool
   window content, a panel), never to a project service.
 - Light tests run no tool window factories. A test that needs the preview builds a
-  `PreviewPanel` with `getTestRootDisposable()` as parent (see `Issue559Test`).
+  `PreviewPanel` with `getTestRootDisposable()` as parent (see `PreviewPanelTest`). Grammars
+  the preview loads must be real files (copy test data to a temp directory), since loading
+  checks them through `java.io.File`.
 - Pure logic (Extract Rule planning, lint fixing) is tested without the IDE; prefer that.
