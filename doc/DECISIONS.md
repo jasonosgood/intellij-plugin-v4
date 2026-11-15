@@ -38,4 +38,13 @@ parentheses are item numbers in [DONE.md](DONE.md).
   finish through `AppUIExecutor.expireWith`. Parses check for cancellation at every decision
   (`PreviewParser.visitDecisionState`), so they run as non-blocking read actions, coalesced
   per panel. Prior art: the platform's threading guide.
+- **Preview input text stays with the panel, not `PreviewService` (39, 41).** The text typed
+  for each grammar is UI state and goes with the editor that shows it; the service holds the
+  grammar-derived state (`PreviewState`, start rules) and never calls the UI.
+- **Keep stable.** Persisted settings: `ANTLRv4GrammarPropertiesComponent` (`@State
+  "ANTLRGenerationPreferences"`) stores per-grammar settings keyed by path; users' stored configs
+  must still load, and changing the key needs a migration. Dynamic plugin loading: the verifier
+  says the plugin loads and unloads without restart; keep it so (no static state, everything
+  registered against a disposable). The plugin ID `org.antlr.intellij.plugin` and action IDs
+  (keymaps refer to them).
 - **No CI.** Work is local and experimental; `.github/` is left alone.
