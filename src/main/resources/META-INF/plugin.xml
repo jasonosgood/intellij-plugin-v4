@@ -81,6 +81,8 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	    <li>New: Code &gt; Sort Parser Rules sorts parser rules alphabetically, keeping the start rule first.</li>
 	    <li>New: the "Grammar lint (antlr4-xl)" inspection finds unused rules, duplicate alternatives,
 	        unnecessary parentheses and more, with quick fixes and "fix all in file".</li>
+	    <li>New: renaming the preview's start rule keeps it as the start rule (after saving the grammar).</li>
+	    <li>Fixed: deleting the preview's start rule now falls back to the first rule instead of none.</li>
 	    <li>Fixed: lexer alternatives made only of commands (<code>X : -&gt; skip ;</code>) were reported as syntax errors.</li>
 	    <li>Fixed: with several projects open, saving a grammar in one could refresh another's preview.</li>
 	    <li>Fixed: clicking a row in the Profiler threw an exception.</li>
@@ -194,6 +196,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
                            instance="org.antlr.intellij.plugin.configdialogs.ANTLRv4ProjectSettings"/>
       <projectService serviceImplementation="org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarPropertiesComponent"/>
       <lang.refactoringSupport language="ANTLRv4" implementationClass="org.antlr.intellij.plugin.refactor.ANTLRv4RefactoringSupport"/>
+      <refactoring.elementListenerProvider implementation="org.antlr.intellij.plugin.preview.StartRuleRenameListenerProvider"/>
       <completion.contributor language="ANTLRv4"
                               implementationClass="org.antlr.intellij.plugin.completion.ANTLRv4CompletionContributor"/>
   </extensions>

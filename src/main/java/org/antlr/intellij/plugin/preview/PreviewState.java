@@ -24,33 +24,51 @@ import java.util.Objects;
  *  @param startRule the rule parses start from; null if the grammar has no parser rules
  *  @param parsingResult the last parse, made with exactly these grammars and start rule; null
  *                       until one finishes
+ *  @param renamedStartRule the start rule's new name after a rename refactoring; it becomes the
+ *                          start rule once grammars that have it load (the preview reloads on
+ *                          save only, so the loaded grammars still have the old name)
  */
 public record PreviewState(@NotNull VirtualFile grammarFile,
 						   @Nullable Grammar parserGrammar,
 						   @Nullable LexerGrammar lexerGrammar,
 						   @Nullable String startRule,
-						   @Nullable ParsingResult parsingResult)
+						   @Nullable ParsingResult parsingResult,
+						   @Nullable String renamedStartRule)
 {
 	/** A grammar not loaded yet. */
 	public static PreviewState empty(@NotNull VirtualFile grammarFile) {
-		return new PreviewState(grammarFile, null, null, null, null);
+		return new PreviewState(grammarFile, null, null, null, null, null);
 	}
 
-	/** Newly loaded grammars. The start rule stays if the parser grammar still has it, else
-	 *  becomes its first rule; the old parse result belonged to the old grammars and is dropped.
+	/** Newly loaded grammars. The start rule becomes its new name if it was renamed and the
+	 *  parser grammar has that name; else it stays if the grammar still has it, else becomes the
+	 *  grammar's first rule. The old parse result belonged to the old grammars and is dropped.
 	 */
 	public PreviewState withGrammars(@Nullable LexerGrammar lexer, @Nullable Grammar parser) {
-		return new PreviewState(grammarFile, parser, lexer, startRuleIn(parser, startRule), null);
+		if ( renamedStartRule!=null && parser!=null && parser.getRule(renamedStartRule)!=null ) {
+			return new PreviewState(grammarFile, parser, lexer, renamedStartRule, null, null);
+		}
+		return new PreviewState(grammarFile, parser, lexer, startRuleIn(parser, startRule), null, renamedStartRule);
 	}
 
 	/** A start rule the user chose; the old parse result belonged to the old start rule. */
 	public PreviewState withStartRule(@Nullable String rule) {
-		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, rule, null);
+		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, rule, null, null);
+	}
+
+	/** The start rule was renamed to {@code newName} in the grammar's text. */
+	public PreviewState withRenamedStartRule(@NotNull String newName) {
+		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, parsingResult, newName);
 	}
 
 	/** This snapshot with the result of parsing with it. */
 	public PreviewState withParsingResult(@Nullable ParsingResult result) {
-		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, result);
+		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, result, renamedStartRule);
+	}
+
+	/** Whether {@code ruleName} is the start rule, by its loaded or its renamed name. */
+	public boolean isStartRule(@NotNull String ruleName) {
+		return ruleName.equals(startRule) || ruleName.equals(renamedStartRule);
 	}
 
 	/** Whether {@code other} has the same grammars and start rule, so a parse made with one

@@ -239,6 +239,16 @@ public final class ANTLRv4PluginController implements Disposable {
 		} // else the panel picks the start rule up from the state when it's created
 	}
 
+	/** The start rule of {@code grammarFile} was renamed in its text; the preview uses the new
+	 *  name once the grammar is saved and reloaded. Called by {@link
+	 *  org.antlr.intellij.plugin.preview.StartRuleRenameListenerProvider}. EDT only.
+	 */
+	public void startRuleRenamed(VirtualFile grammarFile, String newName) {
+		if ( !previewStates.containsKey(grammarFile) ) return; // closed since
+		LOG.info("startRuleRenamed " + newName + " " + project.getName());
+		updatePreviewState(grammarFile, s -> s.withRenamedStartRule(newName));
+	}
+
 	/** A grammar was saved (or may have been: auto-refresh calls this after each highlighting
 	 *  pass). Reloads every open grammar whose inputs changed, the saved one first; does nothing
 	 *  if none did. Superseded saves need no bookkeeping: a queued load finds the cache fresh.

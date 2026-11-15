@@ -10,11 +10,15 @@ import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.PlatformTestUtil;
 import org.antlr.intellij.plugin.ANTLRv4PluginController;
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
+import org.antlr.intellij.plugin.psi.ParserRuleSpecNode;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.tool.Grammar;
 import org.antlr.v4.tool.LexerGrammar;
@@ -221,6 +225,32 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertEquals("tag", state.startRule());
 	}
 
+	/** Renaming the start rule renames the preview's start rule, once the grammar is saved.
+	 *  Renames {@code semver}, which nothing refers to: the test grammars are outside the light
+	 *  project, so the rename can't find references to update.
+	 */
+	public void testRenamingTheStartRuleKeepsItAsTheStartRule() {
+		select(parser);
+		attachPanel();
+		controller.setStartRuleNameEvent(parser, "semver");
+		myFixture.renameElement(parserRule("semver"), "release");
+		assertEquals("semver", controller.getPreviewState(parser).startRule()); // reloads on save only
+		save(parser);
+		assertEquals("release", controller.getPreviewState(parser).startRule());
+	}
+
+	/** Renaming another rule leaves the start rule alone. */
+	public void testRenamingAnotherRuleKeepsTheStartRule() {
+		select(parser);
+		attachPanel();
+		controller.setStartRuleNameEvent(parser, "versionCore");
+		myFixture.renameElement(parserRule("semver"), "release");
+		save(parser);
+		PreviewState state = controller.getPreviewState(parser);
+		assertNotNull(state.parserGrammar().getRule("release"));
+		assertEquals("versionCore", state.startRule());
+	}
+
 	public void testSavingTheLexerReloadsTheParserThatUsesIt() {
 		select(parser);
 		attachPanel();
@@ -340,6 +370,19 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		});
 		controller.grammarFileSavedEvent(file);
 		waitForGrammarLoads();
+	}
+
+	private ParserRuleSpecNode parserRule(String name) {
+		PsiFile psi = PsiManager.getInstance(getProject()).findFile(parser);
+		for (ParserRuleSpecNode rule : PsiTreeUtil.findChildrenOfType(psi, ParserRuleSpecNode.class)) {
+			if ( name.equals(rule.getName()) ) return rule;
+		}
+		throw new AssertionError("no parser rule " + name);
+	}
+
+	/** Saves the grammar's document and sends the save event. */
+	private void save(VirtualFile file) {
+		editAndSave(file, UnaryOperator.identity());
 	}
 
 	private static String ruleName(ParsingResult result) {

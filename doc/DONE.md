@@ -216,6 +216,13 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     `ensureStartRuleExists`, `INPUT_LISTENER_SCOPE`. Tests: 2 added (switching releases the
     previous editor; a start rule change drops the old result), 2 changed (deleted start rule;
     panel disposal).
+40. Renaming the start rule keeps it as the preview's start rule. `StartRuleRenameListenerProvider`
+    (`refactoring.elementListenerProvider`; prior art: run configurations following a renamed
+    class) records the new name in `PreviewState.renamedStartRule`; the next load that has the
+    name makes it the start rule. Not at once: the preview reloads on save only, so until then
+    the loaded grammar still has the old name. Undo restores the old name. Two tests added. In
+    light tests a rename can't update references (the grammars are outside the project), so the
+    tests rename `semver`, which nothing refers to.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.
