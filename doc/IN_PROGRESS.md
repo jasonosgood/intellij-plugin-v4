@@ -25,11 +25,7 @@ loses focus, per Settings > Appearance & Behavior > System Settings > Autosave).
 saves all documents first, as Build and Run do. Code generation belongs to the build.
 
 ### A. Save behavior (first)
-1. **Switching tabs no longer saves.** Remove the save from
-   `GrammarEditorTabListener.selectionChanged`; switching tabs only switches the preview. An
-   edit reaches the preview through whichever save the platform makes. Prior art: no platform
-   editor saves on a tab switch. Trade-off: edit the lexer, switch to the parser's tab, and the
-   preview shows the saved lexer until ⌘S or autosave.
+1. Done: switching tabs no longer saves (DONE.md, item 43).
 2. **Tools save all documents.** Generate ANTLR Recognizer and Test Rule call
    `saveAllDocuments()`, not only save the current grammar, so an unsaved `tokenVocab` lexer
    isn't left behind. Prior art: Build, Run and VCS actions save all documents first.
@@ -92,6 +88,10 @@ Not on their own:
 - **Profile only when the Profiler tab is shown.** Parsing a one-line query on
   `oracle_normal.g4` takes ~330 ms, because the preview parses with exact ambiguity detection
   and profiling on (found in greenfield step 1).
+- **Show that the preview is working.** Loading or parsing a large grammar (`refactorme.g4`,
+  `oracle_normal.g4`) takes seconds with no sign of progress, so the plugin looks hung. Prior
+  art: the platform's `JBLoadingPanel` (a spinner and "Loading…" over a panel, as in the VCS
+  log and diff viewers) and `AsyncProcessIcon` for a small busy marker.
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 
 ## Tabled

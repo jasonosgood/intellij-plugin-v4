@@ -179,6 +179,18 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertNull(preview.getPreviewState(parser).parserGrammar().getRule("extra"));
 	}
 
+	/** Switching tabs doesn't save: the platform decides when (⌘S, Autosave settings). */
+	public void testSwitchingTabsDoesNotSave() {
+		select(parser);
+		select(lexer);
+		Document doc = FileDocumentManager.getInstance().getDocument(lexer);
+		assertNotNull(doc);
+		WriteCommandAction.runWriteCommandAction(getProject(), () ->
+			doc.setText(doc.getText().replace("DOT  : '.';", "PERIOD : '.';")));
+		select(parser);
+		assertTrue(FileDocumentManager.getInstance().isDocumentUnsaved(doc));
+	}
+
 	/** Preview state is keyed by file, not path: moving the grammars keeps it. */
 	public void testMovingGrammarsKeepsTheStartRule() throws Exception {
 		select(parser);

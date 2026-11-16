@@ -1,14 +1,11 @@
 package org.antlr.intellij.plugin;
 
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent;
 import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiDocumentManager;
 import org.antlr.intellij.plugin.preview.PreviewService;
 import org.jetbrains.annotations.NotNull;
 
@@ -16,6 +13,10 @@ import org.jetbrains.annotations.NotNull;
  * Turns this project's editor tab events into preview events ({@link PreviewService}).
  * Declared under {@code <projectListeners>} in plugin.xml, so the platform subscribes one
  * per project before any editor opens and unsubscribes it when the project closes.
+ * <p>
+ * Switching tabs never saves: the platform decides when files are saved (⌘S, Autosave
+ * settings), and the preview follows saves. Prior art: no platform editor saves on a tab
+ * switch.
  */
 public final class GrammarEditorTabListener implements FileEditorManagerListener {
 	private final Project project;
@@ -27,18 +28,6 @@ public final class GrammarEditorTabListener implements FileEditorManagerListener
 	@Override
 	public void selectionChanged(@NotNull FileEditorManagerEvent event) {
 		if ( project.isDisposed() ) return;
-		// Switching away from an edited grammar saves it, so grammars using it see the edit.
-		VirtualFile oldFile = event.getOldFile();
-		if ( oldFile!=null && oldFile.isValid() && "g4".equals(oldFile.getExtension()) ) {
-			PsiDocumentManager psiMgr = PsiDocumentManager.getInstance(project);
-			FileDocumentManager docMgr = FileDocumentManager.getInstance();
-			Document doc = docMgr.getDocument(oldFile);
-			if ( doc!=null && (!psiMgr.isCommitted(doc) || docMgr.isDocumentUnsaved(doc)) ) {
-				psiMgr.commitDocument(doc);
-				docMgr.saveDocument(doc);
-			}
-		}
-
 		VirtualFile newFile = event.getNewFile();
 		if ( newFile==null ) return; // all files closed
 		String ext = newFile.getExtension();

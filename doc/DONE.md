@@ -242,6 +242,10 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     editor creation, ANTLR tool runs) log at debug, not info; `ProfilerPanel`'s `System.err`
     is a logger warning. Enable with Help > Diagnostic Tools > Debug Log Settings
     (`#org.antlr.intellij.plugin`).
+43. Saving A.1: switching tabs no longer saves the grammar. `GrammarEditorTabListener` only
+    switches the preview; an edit reaches the preview through the platform's saves (⌘S,
+    Autosave settings). Prior art: no platform editor saves on a tab switch. Test:
+    `PreviewPanelTest.testSwitchingTabsDoesNotSave`. Checked by the owner in the sandbox.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.
