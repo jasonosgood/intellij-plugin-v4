@@ -114,7 +114,6 @@ public class ANTLRv4GrammarPropertiesStore {
 		ANTLRv4GrammarProperties defaultSettings = new ANTLRv4GrammarProperties();
 
 		defaultSettings.fileName = "**";
-		defaultSettings.autoGen = true;
 		defaultSettings.outputDir = "";
 		defaultSettings.libDir = "";
 		defaultSettings.encoding = "";

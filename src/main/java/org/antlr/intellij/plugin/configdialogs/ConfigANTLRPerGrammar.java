@@ -29,6 +29,8 @@ public class ConfigANTLRPerGrammar extends DialogWrapper {
 	private TextFieldWithBrowseButton outputDirField;
 	private TextFieldWithBrowseButton libDirField;
 	private JTextField fileEncodingField;
+	/** Bound by the GUI Designer form, always hidden: saves never generate code (the build or
+	 *  Generate does; doc/DONE.md, item 47). Goes with the form when the dialog is replaced. */
 	protected JCheckBox autoGenerateParsersCheckBox;
 	protected JTextField languageField;
 	private JComboBox<CaseChangingStrategy> caseTransformation;
@@ -49,11 +51,11 @@ public class ConfigANTLRPerGrammar extends DialogWrapper {
 		grammarFrom.initAntlrFields(project, qualFileName);
 		grammarFrom.generateParseTreeListenerCheckBox.setVisible(false);
 		grammarFrom.generateParseTreeVisitorCheckBox.setVisible(false);
-		grammarFrom.autoGenerateParsersCheckBox.setVisible(false);
 		return grammarFrom;
 	}
 
 	private void initAntlrFields(Project project, String qualFileName) {
+		autoGenerateParsersCheckBox.setVisible(false);
 		FileChooserDescriptor dirChooser =
 				FileChooserDescriptorFactory.createSingleFolderDescriptor().withTitle("Select output dir");
 		outputDirField.addBrowseFolderListener(project, dirChooser);
@@ -70,7 +72,6 @@ public class ConfigANTLRPerGrammar extends DialogWrapper {
 	public void loadValues(Project project, String qualFileName) {
 		ANTLRv4GrammarProperties grammarProperties = getGrammarProperties(project, qualFileName);
 
-		autoGenerateParsersCheckBox.setSelected(grammarProperties.shouldAutoGenerateParser());
 		outputDirField.setText(grammarProperties.getOutputDir());
 		libDirField.setText(grammarProperties.getLibDir());
 		fileEncodingField.setText(grammarProperties.getEncoding());
@@ -84,7 +85,6 @@ public class ConfigANTLRPerGrammar extends DialogWrapper {
     public void saveValues(Project project, String qualFileName) {
 		ANTLRv4GrammarProperties grammarProperties = getOrCreateGrammarProperties(project, qualFileName);
 
-		grammarProperties.autoGen = autoGenerateParsersCheckBox.isSelected();
 		grammarProperties.outputDir = getOutputDirText();
 		grammarProperties.libDir = getLibDirText();
 		grammarProperties.encoding = getFileEncodingText();

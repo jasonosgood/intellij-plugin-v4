@@ -285,6 +285,13 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     - Known regression, fixed with B (IN_PROGRESS.md, B.5): with no generated `.tokens`, the
       parser's editor reports "cannot find tokens file" on its `tokenVocab` option.
     - Checked by the owner in the sandbox.
+47. Saving A.5: the per-grammar "Auto-generate parsers upon save" setting (`autoGen`, on by
+    default) is removed; since A.4 it did nothing. Its checkbox stays in the GUI Designer form
+    `ConfigANTLRDialogPanel.form`, hidden in code (`ConfigANTLRPerGrammar.initAntlrFields`),
+    since the `antlr4.properties` backlog item replaces the whole dialog (owner's call,
+    2026-11-16). Saved settings with `autoGen` still load: the XML serializer skips unknown
+    properties. Also removed `ANTLRv4GrammarProperties.PROP_LANGUAGE`, unused since A.4.
+    Checked by the owner in the sandbox.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

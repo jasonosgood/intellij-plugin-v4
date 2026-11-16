@@ -44,14 +44,10 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 @Tag("PerGrammarGenerationSettings")
 public class ANTLRv4GrammarProperties implements Cloneable {
 
-    public static final String PROP_LANGUAGE = "language";
     static final String PROJECT_SETTINGS_PREFIX = "*";
 
     @Property
     String fileName;
-
-    @Property
-    boolean autoGen;
 
     @Property
     String outputDir;
@@ -83,7 +79,6 @@ public class ANTLRv4GrammarProperties implements Cloneable {
 
     public ANTLRv4GrammarProperties(ANTLRv4GrammarProperties source) {
         this.fileName = source.fileName;
-        this.autoGen = source.autoGen;
         this.outputDir = source.outputDir;
         this.libDir = source.libDir;
         this.encoding = source.encoding;
@@ -92,10 +87,6 @@ public class ANTLRv4GrammarProperties implements Cloneable {
         this.generateListener = source.generateListener;
         this.generateVisitor = source.generateVisitor;
         this.caseChangingStrategy = source.caseChangingStrategy;
-    }
-
-    public boolean shouldAutoGenerateParser() {
-        return autoGen;
     }
 
     public String getOutputDir() {

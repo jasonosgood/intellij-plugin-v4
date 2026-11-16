@@ -33,9 +33,7 @@ saves all documents first, as Build and Run do. Code generation belongs to the b
    (default: the grammar's directory) before the output directory, so a stray `.tokens` beside
    a grammar (from an older plugin or a hand-run `antlr4`) shadows the generated one when
    Generate runs. Consider a warning from Generate when it finds one.
-5. **Remove the per-grammar `autoGen` setting** ("Auto-generate parsers upon save"). Since
-   A.4 it does nothing at all (before, only a lexer saved while its parser was previewed ran
-   the tool). Generate-on-save comes from the build instead (B.2).
+5. Done: the per-grammar "Auto-generate parsers upon save" setting is gone (DONE.md, item 47).
 6. Record the principle in [DECISIONS.md](DECISIONS.md) with its prior art.
 
 ### B. Code generation in the build (larger; after A)

@@ -86,7 +86,8 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	        (Save All, or the IDE's autosave). To see unsaved files, turn on Settings &gt; Editor &gt;
 	        General &gt; Editor Tabs &gt; Mark modified (*).</li>
 	    <li>Changed: saving a grammar no longer runs the ANTLR tool or writes <code>.tokens</code> files.
-	        Generated code comes from Generate ANTLR Recognizer or your build.</li>
+	        Generated code comes from Generate ANTLR Recognizer or your build. The "Auto-generate
+	        parsers upon save" option is gone.</li>
 	    <li>Fixed: Generate ANTLR Recognizer and Test Rule save all open files first; Generate on an
 	        unsaved grammar generated nothing.</li>
 	    <li>Fixed: the preview refreshes when a grammar it uses changes outside the editor (VCS
