@@ -1,0 +1,5 @@
+rootProject.name = 'intellij-plugin-v4'
+
+// The JPS (external build process) part of the plugin: runs in IntelliJ's build process, not
+// in the IDE, so it is compiled apart from it, for Java 11. See doc/B2_JPS_BUILDER.md.
+include 'jps-plugin'

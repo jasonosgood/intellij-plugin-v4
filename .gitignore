@@ -4,6 +4,7 @@
 # Build output
 /out/
 /build/
+/jps-plugin/build/
 
 # downloaded libs/resources
 /lib/
@@ -40,7 +41,6 @@ intellij-plugin-v4.iml
 .idea/dbnavigator.xml
 .idea/preferred-vcs.xml
 .idea/codeStyleSettings.xml
-
 
 
 

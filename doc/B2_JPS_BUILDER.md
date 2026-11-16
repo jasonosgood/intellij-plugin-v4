@@ -1,0 +1,198 @@
+# B.2 design: code generation in the JPS build
+
+Status: design accepted by the owner (2026-11-16); step 0 (the spike) is built. Scope is item B.2 of
+[IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
+configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
+Generate action's reporting (B.3) are separate items; where they touch this one it says so.
+
+## The problem and its prior art
+This is **build-integrated source generation**: a generator that runs before the compiler,
+incrementally, as part of the build.
+
+| System | What it does |
+|---|---|
+| Gradle `antlr` plugin | `generateGrammarSource` before `compileJava`; grammars in `src/main/antlr`; output in `build/generated-src`; any grammar change reruns the whole task |
+| `antlr4-maven-plugin` | `generate-sources` phase; output in `target/generated-sources/antlr4`; keeps a dependency graph (`import`, `tokenVocab`) to regenerate dependents |
+| IntelliJ's own JPS builders (Groovy stubs, JavaFX, GUI forms; Android's `R.java` before it moved to Gradle) | a builder in the build process, registered with `compileServer.plugin`; settings read from `.idea` by a model serializer; a common jar shared with the IDE |
+
+What they agree on, and this design copies:
+1. Generation is a build step before compilation, never an editor event.
+2. Inputs are the grammars under a source root; outputs go to a directory that is a
+   (generated) source root, so the compiler picks them up.
+3. Settings come from project configuration the build can read without the IDE.
+4. Errors go to the build's output, with file, line and column.
+5. Outputs are owned by the build: it deletes the ones whose grammar changed or went away.
+
+## What was checked (2026-11-16)
+Against the SDK page "External Builder API and Plugins" (dated 2026-11-10; no deprecation
+notice) and the 2026.2.1 distribution this project builds with:
+
+- `com.intellij.compileServer.plugin` is declared by the **Java plugin** (module
+  `intellij.java.compiler.impl`), `dynamic="true"`. Bundled plugins register it as
+  `<compileServer.plugin classpath="groovy-jps.jar;groovy-constants-rt.jar"/>`: jar names
+  relative to the plugin's `lib/`, separated by `;`.
+- Builders are found through `META-INF/services/org.jetbrains.jps.incremental.BuilderService`;
+  settings readers through
+  `META-INF/services/org.jetbrains.jps.model.serialization.JpsModelSerializerExtension`.
+- The API is in `plugins/java/lib/modules/intellij.platform.jps.build.jar` (`BuilderService`,
+  `ModuleLevelBuilder`, `BuilderCategory.SOURCE_GENERATOR`, `FSOperations.markDirty`) and
+  `lib/jps-model.jar` (`JpsModelSerializerExtension`, `JpsProjectExtensionSerializer`).
+- Those jars are compiled for **Java 11** (class file version 55). The build process doesn't
+  always run on the IDE's runtime, so builder code must target 11, not this project's 25.
+- `ModuleLevelBuilder.build(context, chunk, dirtyFilesHolder, outputConsumer)`;
+  `OutputConsumer.registerOutputFile(target, file, sourcePaths)`.
+- Not found in the distribution: `JpsBuildTestCase` (the builder test base class). Not covered
+  by the IntelliJ Platform Gradle Plugin docs: any JPS-specific dependency helper. Both were
+  questions for the spike; see "Spike results".
+
+## Decisions
+
+### 1. Shape: a `ModuleLevelBuilder` in category `SOURCE_GENERATOR`
+It takes part in each module's build, sees the dirty `.g4` files under the module's source
+roots (`getCompilableFileExtensions()` returns `g4`), and runs before the Java compiler.
+
+Prior art: the SDK doc's answer for a builder that feeds an existing target; a custom
+`BuildTarget` is for output the Java targets don't consume. Consequence, as in Gradle and
+Maven: **a grammar outside a source root isn't built.** The Generate action still works on it.
+
+### 2. Addressing: outputs are keyed by the grammar that produced them
+Each generated file (`.java`, `.tokens`, `.interp`) is registered against its grammar's path in
+JPS's source-to-output mapping. JPS then deletes outputs of changed or removed grammars and
+knows when nothing changed. The plugin stores nothing of its own.
+
+**Granularity: when any grammar in a module is dirty, regenerate all the module's grammars.**
+A parser depends on its `tokenVocab` lexer and on imported grammars, and a per-file build would
+miss those. Prior art: this is Gradle's answer (task-level). Maven's dependency graph is the
+finer answer; deferred until a module with many large grammars makes this slow (yardstick:
+`oracle_normal.g4`). All grammars with the same settings go to one `Tool` run, so ANTLR orders
+lexers before the parsers that use them (`Tool.sortGrammarByTokenVocab`).
+
+### 3. Settings: read the existing project state through a JPS model serializer
+The builder reads `ANTLRGenerationPreferences` (the `PerGrammarGenerationSettings` list, with
+its exact-path, wildcard, `*` and built-in default lookup) from the project files.
+
+- Honors "Keep stable": no change to the persisted format, no migration.
+- The tabled `antlr4.properties` item stays possible: the builder asks one small interface for
+  a grammar's settings, and the properties file would be a second implementation of it.
+- Deviation from prior art, noted: Gradle and Maven keep settings in the build file, which is
+  checked in. These live in `.idea`. That is the tabled item's argument, not B.2's.
+
+### 4. One generation core, shared by the action and the builder
+Today `RunANTLROnGrammarFile` mixes argument building with PSI, VFS, `PathMacroManager` and
+`WildcardFileNameMatcher`. None of those exist in the build process. Extract a pure core, with
+no IDE classes, compiled for Java 11:
+
+- settings lookup (path, wildcard, `*`, default);
+- argument building (`-o`, `-lib`, `-package`, `-Dlanguage`, `-encoding`, listener/visitor);
+- running the `Tool` and returning messages as data (severity, file, line, column, text).
+
+The Generate action and the builder both call it, so they can't disagree about where files go.
+Two inputs differ by caller and are passed in: the package of the grammar's directory (IDE:
+`ProjectFileIndex`; build: the JPS source root and its package prefix) and path macros
+(`$PROJECT_DIR$`). "Does `@header` declare a package" moves from PSI plus a regex to ANTLR's own
+grammar AST, which both sides have.
+
+Prior art: `groovy-constants-rt.jar` and `javaFX-common.jar` are exactly this: a jar on both the
+IDE's and the build process's classpath.
+
+### 5. When the builder acts
+It generates for a grammar only when all hold:
+- the grammar is under a source root of the module;
+- its resolved output directory is under a source root of the same module;
+- the module isn't imported from Gradle or Maven (B.1: that build generates; a second copy
+  means duplicate classes and possibly a different ANTLR version).
+
+Otherwise it skips, with one information message per module saying why. So a project where
+`gen/` isn't a source root builds as it does today. Generated `.java` files are marked dirty for
+the current round so the same build compiles them.
+
+**`gen/` as a generated source root (owner, 2026-11-16).** The default output directory is to
+be a *generated* source root, so the compiler takes it and the IDE treats its files as
+generated (a warning on editing them; inspections off). When a build skips a grammar because
+its output directory isn't a source root, the plugin offers to mark it: a notification with an
+action, not a silent change to the module. Prior art: IntelliJ's annotation processing marks
+its "generated sources directory" this way.
+
+### 6. Thread ownership
+The builder holds no mutable state. JPS may build independent modules in parallel, so each
+generation creates its own `Tool`; nothing is cached between runs. The IDE side is unchanged.
+
+### 7. Time and on-disk formats
+No clocks and no new files. Change detection is JPS's (stamps and its own mapping); settings
+stay in the existing XML.
+
+### 8. Failure
+- ANTLR errors become build errors with file, line and column, and the module's build stops
+  there, so the compiler never runs on stale generated code. Warnings become build warnings.
+- An exception from the `Tool` becomes one build error with the stack trace in the build log.
+- Cancellation is checked between grammars. The `Tool` itself can't be interrupted
+  (DECISIONS.md, "Grammar loads").
+- Version drift: the builder generates with the plugin's bundled ANTLR (4.13.2). If the
+  module's classpath has a different `antlr4-runtime`, warn once, in the tool's own words
+  ("ANTLR Tool version X used for code generation does not match the current runtime version Y").
+- Rebuild deletes registered outputs before regenerating. A project that checks in `gen/` will
+  see that as a diff only if the output differs.
+
+### 9. Observability
+- Users: the Build tool window.
+- Developers: `build-log/build-log.log` under the sandbox's system directory; "Debug Build
+  Process" attaches a debugger to the build process.
+- Tests and the agent: the core is plain JUnit (settings and arguments in, files and messages
+  out). Builder tests on a real JPS build if the spike finds the test framework; otherwise a
+  scripted sandbox build of `semver`, checked through the build log.
+
+### 10. Packaging
+- A Gradle subproject (the first: a `settings.gradle` is added) holding the core and the
+  builder, compiled with `--release 11`, with the JPS jars as `compileOnly`.
+- Its jar ships in the plugin's `lib/`. `plugin.xml` gains
+  `<depends optional="true" config-file="antlr-jps.xml">com.intellij.java</depends>`, and
+  `antlr-jps.xml` holds the `compileServer.plugin` entry. IDEs without the Java plugin are
+  unaffected; the plugin stays dynamically loadable (the extension point is dynamic).
+- The `classpath` attribute must name the ANTLR tool's jars by file name (`antlr4-4.13.2.jar`,
+  `antlr4-runtime-4.13.2.jar`, `ST4-4.3.4.jar`, `antlr-runtime-3.5.3.jar`), which carry
+  versions. A test asserts that every name in it exists in the built distribution, so an ANTLR
+  upgrade can't silently break the builder.
+
+## Steps
+Each tested, checked in the sandbox and committed on its own.
+
+0. **Spike.** `settings.gradle`, the subproject at Java 11 against the JPS jars, a builder that
+   only prints a message, packaged and seen in a sandbox Build. Settles the two unknowns: how
+   the subproject gets the JPS API with IntelliJ Platform Gradle Plugin 2.x, and whether
+   `JpsBuildTestCase` is obtainable. If either fails, stop and rethink before step 1.
+1. **Extract the core** from `RunANTLROnGrammarFile`; the Generate action uses it. No behavior
+   change; characterization tests first.
+2. **Settings serializer**: the builder's process loads `ANTLRGenerationPreferences`.
+3. **The builder**: generate, register outputs, mark generated sources dirty, report messages.
+4. **Conditions and warnings** (decision 5, version drift).
+5. README, `<change-notes>`, ARCHITECTURE.md; move this doc's decisions to DECISIONS.md.
+
+B.5 (the "cannot find tokens file" editor error) is independent of all of this and can go first.
+
+## Spike results (step 0, 2026-11-16)
+- **Getting the JPS API in Gradle: settled.** The subproject `jps-plugin` applies
+  `org.jetbrains.intellij.platform.base` and depends on `bundledPlugin 'com.intellij.java'`;
+  it compiles with `--release 11`. The `.module` variant of the Gradle plugin is wrong here: it
+  instruments the classes and ships the jar as `lib/modules/intellij-plugin-v4.jps-plugin.jar`.
+  With `.base`, `runtimeOnly project(':jps-plugin')` puts a plain `lib/antlr-jps.jar` in the
+  sandbox, which is what `compileServer.plugin` names.
+- **Builder tests: settled, differently than planned.** `JpsBuildTestCase` isn't published
+  for current IDEs (`com.jetbrains.intellij.idea:jps-build-test` stops at 2022.2.5). The
+  standalone build is (`com.jetbrains.intellij.tools:jps-build-standalone`, one version per
+  IDE build). `AntlrSourceGeneratorBuilderTest` writes a small project to a temp directory and
+  runs a real build in the test JVM with `Standalone.runBuild`; the builder is found through
+  `META-INF/services`, as in the IDE. It needs file logging off
+  (`jps.use.default.file.logging=false`) and the NIO `--add-opens` the IDE gives its build
+  process. The dependency's version is the IDE's build number (`262.9437.185`), a second place
+  to change when `ideaVersion` changes.
+- **Not yet seen: the builder running in the IDE's own build process**, which is the only
+  thing that proves the `compileServer.plugin` registration. Sandbox check: open a plain
+  (non-Gradle) Java project with a `.g4` under a source root, Build > Rebuild Project, and
+  expect the warning "spike: build process saw changed grammars in …" in the Build tool window.
+
+## Answers from the owner (2026-11-16)
+1. **On by default**, under the conditions of decision 5.
+2. **Settings** come from the existing project state (decision 3); `antlr4.properties` stays
+   a later item.
+3. **Targets other than Java:** generate whatever `language` says; only Java output is compiled.
+4. **`gen/` is marked a generated source root** (decision 5).

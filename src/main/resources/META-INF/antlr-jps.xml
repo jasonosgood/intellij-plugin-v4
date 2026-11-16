@@ -1,0 +1,8 @@
+<!-- Loaded only when the Java plugin is present (see the optional <depends> in plugin.xml):
+     it declares compileServer.plugin and runs the JPS build. doc/B2_JPS_BUILDER.md. -->
+<idea-plugin>
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Jars from this plugin's lib/ put on the build process's classpath. -->
+    <compileServer.plugin classpath="antlr-jps.jar"/>
+  </extensions>
+</idea-plugin>

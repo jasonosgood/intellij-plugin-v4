@@ -49,7 +49,9 @@ plugins for real builds.
    separate Gradle subproject; it runs in the build process without PSI or IDE services; the
    per-grammar settings (output dir, package, language, listener/visitor) must be readable by
    JPS (a JPS model serializer, or move them to a file JPS reads or the grammar's
-   `options {}`); JPS build tests. Check the API against current SDK docs before planning.
+   `options {}`); JPS build tests. Design draft, with the API checked against the SDK docs and
+   the 2026.2.1 distribution: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Questions answered
+   2026-11-16; step 0 (spike) is built and tested, awaiting the owner's sandbox check.
 3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
    the Tool Output tool window" below).
 4. Optionally, the README points to the Gradle and Maven plugins for real builds.

@@ -1,0 +1,59 @@
+// Code that runs in IntelliJ's build process (JPS), loaded there through the
+// compileServer.plugin extension in META-INF/antlr-jps.xml. See doc/B2_JPS_BUILDER.md.
+plugins {
+    id 'java'
+    id 'org.jetbrains.intellij.platform.base'
+}
+
+def (platformType, platformVersion) = findProperty("ideaVersion").toString().split("-", 2)
+
+repositories {
+    mavenCentral()
+    intellijPlatform {
+        defaultRepositories()
+    }
+}
+
+dependencies {
+    intellijPlatform {
+        create(platformType, platformVersion)
+        // The JPS builder API (org.jetbrains.jps.*) ships with the Java plugin.
+        bundledPlugin 'com.intellij.java'
+    }
+}
+
+// The build process may run on the project's JDK rather than the IDE's runtime, and the JPS
+// API itself is compiled for Java 11 (class file version 55); match it.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+}
+
+// plugin.xml's compileServer.plugin names this jar, so its name carries no version.
+jar {
+    archiveBaseName = 'antlr-jps'
+    archiveVersion = ''
+}
+
+// Builder tests run a real JPS build in-process through org.jetbrains.jps.build.Standalone.
+// JetBrains no longer publishes the JpsBuildTestCase framework (jps-build-test stops at
+// 2022.2); the standalone build is published for every IDE build.
+def ideBuildNumber = '262.9437.185' // the build number of ideaVersion; see product-info.json
+dependencies {
+    testImplementation "com.jetbrains.intellij.tools:jps-build-standalone:$ideBuildNumber"
+    testImplementation "junit:junit:4.13.2"
+}
+
+test {
+    // The standalone build otherwise sets up file logging and needs jps.log.dir.
+    systemProperty 'jps.use.default.file.logging', 'false'
+    // JPS's storage reaches into NIO internals; the IDE starts its build process with these too.
+    jvmArgs '--add-opens=java.base/java.nio=ALL-UNNAMED',
+            '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED',
+            '--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED',
+            '--add-opens=java.base/java.util=ALL-UNNAMED'
+    testLogging {
+        events "failed"
+        exceptionFormat "full"
+    }
+}

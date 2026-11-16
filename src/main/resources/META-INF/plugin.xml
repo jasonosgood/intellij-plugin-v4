@@ -113,6 +113,8 @@ For really big files and slow grammars, there is an appreciable delay when displ
        on how to target different products -->
   <!-- uncomment to enable plugin in all products -->
   <depends>com.intellij.modules.lang</depends>
+  <!-- Code generation in the JPS build needs the Java plugin, which runs that build. -->
+  <depends optional="true" config-file="antlr-jps.xml">com.intellij.java</depends>
 
   <!-- PreviewService, GrammarCache and ToolOutput are light project services (@Service), so they aren't listed here. -->
   <projectListeners>
