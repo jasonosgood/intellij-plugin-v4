@@ -1,6 +1,8 @@
 # B.2 design: code generation in the JPS build
 
-Status: design accepted by the owner (2026-11-16); steps 0 to 4 are done. Scope is item B.2 of
+Status: done (2026-11-16); all steps are built and the owner checked steps 3 and 4 in the
+sandbox. This is the design record; the settled rules are summarized in
+[DECISIONS.md](DECISIONS.md) ("Code generation in the JPS build"). Scope is item B.2 of
 [IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
 configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
 Generate action's reporting (B.3) are separate items; where they touch this one it says so.
@@ -136,7 +138,7 @@ stay in the existing XML.
 
 ### 9. Observability
 - Users: the Build tool window.
-- Developers: `build-log/build-log.log` under the sandbox's system directory; "Debug Build
+- Developers: `build-log/build-log.log` under the sandbox's log directory; "Debug Build
   Process" attaches a debugger to the build process.
 - Tests and the agent: the core is plain JUnit (settings and arguments in, files and messages
   out). Builder tests on a real JPS build if the spike finds the test framework; otherwise a
@@ -213,14 +215,16 @@ Each tested, checked in the sandbox and committed on its own.
    - **The offer:** the builder also sends a custom builder message; `OutputRootOffer` in the
      IDE shows a notification with "Mark as generated sources root" and "Don't offer again"
      (per project), at most once per directory per session. Both messages name the
-     directory relative to the module, and marking creates the directory if it's missing. After marking, JPS sees the
-     module's roots changed and the next build generates; a test covers that.
+     directory relative to the module, and marking creates the directory if it's missing.
+     After marking, JPS sees the module's roots changed and the next build generates; a test
+     covers that.
    - **Version drift:** `RuntimeVersion` finds the ANTLR runtime on the module's compile
      classpath (the jar holding `RuntimeMetaData`), reads its version from the manifest, and
      warns when major.minor differs from the tool's, as the runtime's own check does.
    - The IDE side uses Java plugin classes, so the main project now compiles against the
      bundled Java plugin; those classes are only referenced from `antlr-jps.xml`.
-5. README, `<change-notes>`, ARCHITECTURE.md; move this doc's decisions to DECISIONS.md.
+5. README, `<change-notes>`, ARCHITECTURE.md; this doc's decisions summarized in DECISIONS.md.
+   Done (2026-11-16).
 
 B.5 (the "cannot find tokens file" editor error) is independent of all of this and can go first.
 

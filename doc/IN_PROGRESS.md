@@ -43,17 +43,15 @@ plugins for real builds.
    into `gen/`: duplicate classes, and the plugin's bundled ANTLR tool may differ from the
    project's runtime ("ANTLR Tool version X used for code generation does not match the current
    runtime version Y"). Detect the build's ANTLR plugin and say so, or step aside.
-2. **Plain JPS projects: a JPS source-generator builder** (`<compileServer.plugin>`,
-   `BuilderService`), so Build, Rebuild and run configurations generate, incrementally.
-   Generate-on-save then comes from the platform's *Actions on Save > Build project*. Costs: a
-   separate Gradle subproject; it runs in the build process without PSI or IDE services; the
-   per-grammar settings (output dir, package, language, listener/visitor) must be readable by
-   JPS (a JPS model serializer, or move them to a file JPS reads or the grammar's
-   `options {}`); JPS build tests. Design draft, with the API checked against the SDK docs and
-   the 2026.2.1 distribution: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Steps 0 to 4 (spike,
-   generation core, settings in the build process, the builder generates, when the builder
-   steps aside with the offer to mark `gen/` and the version warning) are done. Step 5
-   (README, change notes, ARCHITECTURE.md, decisions to DECISIONS.md) is next. Open: a settings change alone doesn't regenerate.
+2. **Plain JPS projects: a JPS source-generator builder. Done** (DONE.md items 48–52; design
+   in [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md); the rules in [DECISIONS.md](DECISIONS.md), "Code
+   generation in the JPS build"). Build, Rebuild and run configurations generate,
+   incrementally; generate-on-save comes from the platform's *Actions on Save > Build
+   project*. Left open:
+   - **A settings change alone doesn't regenerate.** Changing a grammar's package or output
+     directory doesn't make the grammar dirty; Rebuild Project fixes it. A fix would store
+     the arguments with the outputs and compare. Prior art: javac option changes force a
+     rebuild in JPS.
 3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
    the Tool Output tool window" below).
 4. Optionally, the README points to the Gradle and Maven plugins for real builds.

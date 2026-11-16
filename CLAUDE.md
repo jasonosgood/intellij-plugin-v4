@@ -53,6 +53,8 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the plugin is built: PSI, preview, grammar tools.
 - [doc/IN_PROGRESS.md](doc/IN_PROGRESS.md): current work, later preview UX, tabled items.
 - [doc/DECISIONS.md](doc/DECISIONS.md): settled decisions; read before reopening one.
+- [doc/B2_JPS_BUILDER.md](doc/B2_JPS_BUILDER.md): design record for code generation in the JPS
+  build; read when working on `jps-plugin`.
 - [doc/DONE.md](doc/DONE.md): completed work, a history log; read only when an item number is cited.
 - [antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md): the submodule's own guide; its plans and reports
   are in [antlr4-xl/docs/superpowers/plans/](antlr4-xl/docs/superpowers/plans/).

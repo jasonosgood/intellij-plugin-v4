@@ -292,6 +292,22 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     2026-11-16). Saved settings with `autoGen` still load: the XML serializer skips unknown
     properties. Also removed `ANTLRv4GrammarProperties.PROP_LANGUAGE`, unused since A.4.
     Checked by the owner in the sandbox.
+48. Build B.2 steps 0 and 1: the `jps-plugin` subproject (Java 11, JPS API from the bundled
+    Java plugin), a spike builder seen in a sandbox build, and the generation core extracted
+    from `RunANTLROnGrammarFile` (`GenerationArgs`, `AntlrGenerator`, `ToolMessage`). No
+    behavior change for the Generate action.
+49. Build B.2 step 2: the build process reads the per-grammar settings from `.idea/misc.xml`
+    (`AntlrModelSerializerExtension`); the lookup rules moved to the core (`SettingsLookup`).
+50. Build B.2 step 3: `AntlrSourceGeneratorBuilder` generates before the Java compiler,
+    registers outputs per grammar, and compiles generated Java in the same build. Deleting
+    `gen/` and `out/` and rebuilding regenerates. Checked by the owner in the sandbox.
+51. Build B.2 step 4: the builder steps aside for Gradle and Maven modules and for output
+    directories that aren't source roots; `OutputRootOffer` offers "Mark as generated sources
+    root" (creating the directory if missing); messages name the directory relative to the
+    module; a warning when the module's ANTLR runtime differs from the tool's. Checked by the
+    owner in the sandbox. Temp files and sandbox test projects moved to `tmp/` in the repo.
+52. Build B.2 step 5: README ("Generating code", and the stale "builds on save" text removed),
+    change notes, ARCHITECTURE.md ("Code generation"), DECISIONS.md.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

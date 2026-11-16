@@ -74,6 +74,11 @@ For really big files and slow grammars, there is an appreciable delay when displ
   <change-notes><![CDATA[
 	<p>Requires IntelliJ 2026.2 or later and Java 25.</p>
 	<ul>
+	    <li>New: in plain IntelliJ projects (not imported from Gradle or Maven), Build, Rebuild and
+	        run configurations generate recognizers from changed grammars before compiling, with
+	        ANTLR's errors in the Build tool window. The output directory (<code>gen</code> by
+	        default) must be a source root: when it isn't, a notification offers to mark it as a
+	        generated sources root. For generation on save, turn on Actions on Save &gt; Build project.</li>
 	    <li>New: Refactor &gt; Extract Rule can replace every occurrence of the selection, suggests a name,
 	        and explains why a selection can't be extracted (part of an element, left recursion,
 	        labels used by actions elsewhere, partly labelled alternatives).</li>

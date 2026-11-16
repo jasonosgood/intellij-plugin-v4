@@ -66,6 +66,35 @@ parentheses are item numbers in [DONE.md](DONE.md).
     prior art: a run uses saved files; editor checks see what the user sees.
   - The removed "Auto-generate parsers upon save" setting still loads from old projects: the
     XML serializer skips unknown properties (see "Keep stable").
+- **Code generation in the JPS build (48–52).** In plain IntelliJ projects a JPS
+  source-generator builder runs ANTLR before the Java compiler. Full design, API checks and
+  spike results: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Prior art: Gradle's `antlr` plugin,
+  `antlr4-maven-plugin`, IntelliJ's own JPS builders (Groovy stubs, GUI forms).
+  - On by default. A grammar is built when it is under a source root of its module, its
+    output directory is a source root of the same module, and the module isn't imported from
+    Gradle or Maven (that build generates; a second copy means duplicate classes).
+  - The plugin never changes a module's roots unasked. When the output directory isn't a
+    source root it generates nothing and offers to mark it as a generated sources root. Prior
+    art: annotation processing's generated sources directory.
+  - One rule for every target language: output goes only to a source root, also for targets
+    the IDE doesn't compile.
+  - When any grammar of a module is dirty, all the module's grammars are regenerated
+    (`tokenVocab`, imports). Prior art: Gradle's task-level answer. Maven's dependency graph
+    is the finer one, deferred until a module is slow (yardstick: `oracle_normal.g4`).
+  - Outputs are keyed by their grammar in JPS's source-to-output mapping; the plugin keeps no
+    state, no clock and no files of its own.
+  - Settings stay in the existing project state (`ANTLRGenerationPreferences`, see "Keep
+    stable"), read in the build process by a second reader guarded by a round-trip test.
+    Deviation from prior art (settings in a checked-in build file) is the tabled
+    `antlr4.properties` item's argument.
+  - One generation core (Java 11, no IDE classes) serves the Generate action and the builder,
+    so they can't disagree about where files go.
+  - ANTLR errors are build errors and stop the module's build. The builder generates with the
+    bundled ANTLR and warns when the module's runtime differs in major.minor.
+  - Builder tests run the standalone JPS build (`jps-build-standalone`); `JpsBuildTestCase`
+    isn't published for current IDEs. Its version is the IDE's build number, a second place to
+    change with `ideaVersion`.
+  - Known gap: a settings change alone doesn't regenerate; Rebuild Project does.
 - **Keep stable.** Persisted settings: `ANTLRv4GrammarPropertiesComponent` (`@State
   "ANTLRGenerationPreferences"`) stores per-grammar settings keyed by path; users' stored configs
   must still load, and changing the key needs a migration. Dynamic plugin loading: the verifier

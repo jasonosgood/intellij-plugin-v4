@@ -10,6 +10,10 @@ The `antlr4-xl` git submodule supplies the grammar tools (linter, formatter, rul
 `build.gradle` generates its meta-grammar parser (package `xl`) and compiles the tool classes
 it needs into the plugin, as a separate source set.
 
+The `jps-plugin` subproject holds the code that also runs in IntelliJ's build process (see
+"Code generation"). It is compiled for Java 11 with no IDE classes and ships as
+`lib/antlr-jps.jar`.
+
 GitHub Actions are used for continuous integration, see files in `.github/workflows`.
 
 ## Lexing/parsing
@@ -29,6 +33,33 @@ using the "official" parser. The annotator constructs a `org.antlr.v4.Tool`
 with all the flags configured in the `Configure ANTLR...` dialog. 
 `GrammarIssuesCollector` sets up an error listener, then processes all the issues
 reported by the `Tool` to show them in the editor.
+
+## Code generation
+
+Recognizers are generated in two places, by one core, so both put the same files in the same
+directories. The design and its prior art are in [doc/B2_JPS_BUILDER.md](doc/B2_JPS_BUILDER.md).
+
+- The core is package `org.antlr.intellij.plugin.generation` in `jps-plugin`: settings lookup
+  (`SettingsLookup`: exact path, wildcard, the project's `*` entry, defaults), argument
+  building (`GenerationArgs`), and the tool run (`AntlrGenerator`, a `Tool` subclass that
+  records each file it writes and returns messages as data).
+- The Generate ANTLR Recognizer action (`RunANTLROnGrammarFile`) calls the core from the IDE.
+- In plain IntelliJ (JPS) projects, `jps/AntlrSourceGeneratorBuilder`, a `ModuleLevelBuilder`
+  in category `SOURCE_GENERATOR`, calls it from the build process before the Java compiler.
+  It is registered through `META-INF/antlr-jps.xml` (`compileServer.plugin`, loaded only with
+  the Java plugin) and found through `META-INF/services`. It registers each generated file as
+  an output of its grammar, so JPS does the change detection and deletes stale output; the
+  plugin stores nothing.
+- The build process has no PSI and no project services. The per-grammar settings reach it
+  through `jps/AntlrModelSerializerExtension`, which reads the same `.idea/misc.xml` state
+  the IDE writes; `SettingsReadByTheBuildTest` keeps the two readers in agreement.
+- The builder steps aside for modules imported from Gradle or Maven (`jps/ExternalBuild`) and
+  for grammars whose output directory isn't a source root. For the latter it sends a custom
+  builder message (`generation/BuildMessages`), and `build/OutputRootOffer` in the IDE offers
+  to mark the directory as a generated source root.
+- Builder tests run real builds in the test JVM with the standalone JPS build
+  (`AntlrSourceGeneratorBuilderTest`). To debug in the sandbox, read
+  `log/build-log/build-log.log` or use "Debug Build Process".
 
 ## Grammar tools (antlr4-xl)
 

@@ -19,7 +19,9 @@ IntelliJ IDEA and other IntelliJ-based IDEs.
 - rename rules
 - save parse trees as svg/jpg/png; right click in parse tree view (1.9)
 - comment grammar rule lines with meta-/ (1.7)
-- generates Java code; shortcut (ctrl-shift-G / meta-shift-G) but it's in Tools menu and popups.
+- generates recognizers in the build: in plain IntelliJ projects, Build, Rebuild and run
+  configurations run ANTLR on changed grammars before compiling (see "Generating code")
+- generates code on request; shortcut (ctrl-shift-G / meta-shift-G) but it's in Tools menu and popups.
 - code completion for tokens, rule names;
 - finds tokenVocab option for code gen if there is a tokenVocab option, don't warn about implicit tokens.
 - handles separate parsers and lexers like TParser.g4 and TLexer.g4 (1.7)
@@ -37,10 +39,8 @@ IntelliJ IDEA and other IntelliJ-based IDEs.
 
 You can configure the ANTLR tool options per grammar file; right-click
 in a grammar or on a grammar element within the structured view.
-When you change and save a grammar, it automatically builds with ANTLR
-in the background according to the preferences you have set.  ANTLR
-tool errors appear in a console you can opened by clicking on a button
-in the bottom tab.
+Saving a grammar doesn't run ANTLR; the build does, or you do with
+Generate ANTLR Recognizer (see "Generating code").
 
 You can use the ctrl-key while moving the mouse and it will show you
 token information in the preview editor box via tooltips. Meta-key shows parser call stack.
@@ -53,6 +53,35 @@ ctrl-return, or whatever you have configured for the generate pop-up,
 will bring up a list of things you can generate. The only one so far is
 a generator to create lexical rules for any literals, referenced in the parser
  grammar, that have not been defined.
+
+## Generating code
+
+**In the build.** In a plain IntelliJ project (one not imported from Gradle or Maven), Build,
+Rebuild and run configurations generate recognizers before the compiler runs:
+
+- A grammar is built when it is under a source root of its module and its output directory
+  (`gen` under the module's content root by default; set it with Configure ANTLR...) is a
+  source root of the same module.
+- If the output directory isn't a source root, nothing is generated and a notification offers
+  "Mark as generated sources root". Accept it once and later builds generate there.
+- When a grammar of a module changes, all of that module's grammars are regenerated, so a
+  parser follows its `tokenVocab` lexer and its imports. Deleting the output directory is
+  safe: the next build regenerates it.
+- ANTLR's errors and warnings appear in the Build tool window with file, line and column.
+- Any target language is generated; only Java output is compiled.
+- A warning appears when the module's `antlr4-runtime` differs from the plugin's ANTLR
+  (4.13.2) in major or minor version.
+- After changing a grammar's settings (package, output directory, language) without changing
+  the grammar, use Build > Rebuild Project; a plain Build doesn't notice.
+- To generate on save, turn on Settings > Tools > Actions on Save > Build project.
+
+**In Gradle and Maven projects** the plugin generates nothing during the build: use Gradle's
+[`antlr` plugin](https://docs.gradle.org/current/userguide/antlr_plugin.html) or the
+[`antlr4-maven-plugin`](https://www.antlr.org/api/maven-plugin/latest/), so the IDE and the
+command line build the same way.
+
+**On request.** Generate ANTLR Recognizer (ctrl-shift-G / meta-shift-G) runs ANTLR on the
+current grammar in any project, with the same settings.
 
 ## Limitations
 
