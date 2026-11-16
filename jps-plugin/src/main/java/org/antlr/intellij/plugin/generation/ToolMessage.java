@@ -7,6 +7,8 @@ public final class ToolMessage {
 	public final Kind kind;
 	/** The message as the tool prints it, on one line. */
 	public final String text;
+	/** The message alone, without its severity, number and position. */
+	public final String summary;
 	/** The grammar file it is about, or null. */
 	public final String file;
 	/** 1-based, or -1 when the message has no position. */
@@ -14,9 +16,10 @@ public final class ToolMessage {
 	/** 0-based, as ANTLR counts, or -1 when the message has no position. */
 	public final int column;
 
-	public ToolMessage(Kind kind, String text, String file, int line, int column) {
+	public ToolMessage(Kind kind, String text, String summary, String file, int line, int column) {
 		this.kind = kind;
 		this.text = text;
+		this.summary = summary;
 		this.file = file;
 		this.line = line;
 		this.column = column;

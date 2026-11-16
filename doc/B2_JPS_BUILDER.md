@@ -1,6 +1,6 @@
 # B.2 design: code generation in the JPS build
 
-Status: design accepted by the owner (2026-11-16); steps 0 and 1 are done, step 2 is built. Scope is item B.2 of
+Status: design accepted by the owner (2026-11-16); steps 0 to 2 are done, step 3 is built. Scope is item B.2 of
 [IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
 configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
 Generate action's reporting (B.3) are separate items; where they touch this one it says so.
@@ -182,6 +182,23 @@ Each tested, checked in the sandbox and committed on its own.
    - Until step 3 the spike builder's warning also shows each grammar's package and output
      directory, to check the settings in a sandbox build.
 3. **The builder**: generate, register outputs, mark generated sources dirty, report messages.
+   Built (2026-11-16), tested by real builds in `AntlrSourceGeneratorBuilderTest`:
+   - **When it generates:** a grammar of the module changed or was removed, or a generated
+     file is gone (so deleting `gen/` by hand heals on the next build). Then all the module's
+     grammars are regenerated (decision 2).
+   - **Which files belong to which grammar** comes from the tool itself: `AntlrGenerator`
+     subclasses `Tool` and notes every file it opens for writing. No guessing from names.
+   - **Same-build compilation:** generated `.java` files are marked dirty for the current
+     round. This only has an effect when the output directory is a source root (step 4).
+   - **`@header` packages** are read with ANTLR's own parser (`GrammarHeader`), with the
+     regex the IDE uses.
+   - **Errors** carry the grammar's path, line and column, and stop the module's build.
+   - **Not handled: a settings change alone.** Changing a grammar's package or output
+     directory doesn't make the grammar dirty, so the next Build does nothing and the old
+     output stays. Rebuild Project fixes it. A fix would store the arguments with the outputs
+     and compare; prior art is javac option changes forcing a rebuild in JPS.
+   - **A test trap:** JPS treats a source file newer than the build's start as changed during
+     the build and builds it again next time. Tests that set file times must stay in the past.
 4. **Conditions and warnings** (decision 5, version drift).
 5. README, `<change-notes>`, ARCHITECTURE.md; move this doc's decisions to DECISIONS.md.
 

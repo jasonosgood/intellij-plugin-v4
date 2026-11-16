@@ -29,6 +29,7 @@ import org.antlr.intellij.plugin.ANTLRv4TokenTypes;
 import org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarProperties;
 import org.antlr.intellij.plugin.generation.AntlrGenerator;
 import org.antlr.intellij.plugin.generation.GenerationArgs;
+import org.antlr.intellij.plugin.generation.GrammarHeader;
 import org.antlr.intellij.plugin.generation.GrammarPlace;
 import org.antlr.intellij.plugin.generation.ToolMessage;
 import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
@@ -44,7 +45,6 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.regex.Pattern;
 
 import static com.intellij.psi.util.PsiTreeUtil.getChildOfType;
 import static org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarPropertiesStore.getGrammarProperties;
@@ -54,8 +54,6 @@ import static org.antlr.intellij.plugin.psi.MyPsiUtils.findChildrenOfType;
 public class RunANTLROnGrammarFile extends Task.Modal {
 	public static final Logger LOG = Logger.getInstance("RunANTLROnGrammarFile");
 	public static final String groupDisplayId = "ANTLR 4 Parser Generation";
-
-	private static final Pattern PACKAGE_DEFINITION_REGEX = Pattern.compile("package\\s+[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+[0-9a-z_];");
 
 	private final VirtualFile grammarFile;
 	private final Project project;
@@ -164,7 +162,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 					AtAction atAction = getChildOfType(prequelConstruct, AtAction.class);
 
 					if ( atAction!=null && atAction.getIdText().equals("header") ) {
-						return PACKAGE_DEFINITION_REGEX.matcher(atAction.getActionBlockText()).find();
+						return GrammarHeader.declaresPackage(atAction.getActionBlockText());
 					}
 				}
 			}

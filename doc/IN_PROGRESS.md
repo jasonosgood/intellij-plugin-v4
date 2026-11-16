@@ -50,9 +50,10 @@ plugins for real builds.
    per-grammar settings (output dir, package, language, listener/visitor) must be readable by
    JPS (a JPS model serializer, or move them to a file JPS reads or the grammar's
    `options {}`); JPS build tests. Design draft, with the API checked against the SDK docs and
-   the 2026.2.1 distribution: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Steps 0 (spike) and 1
-   (the generation core) are done; step 2 (settings in the build process) is built and tested,
-   awaiting the owner's sandbox check.
+   the 2026.2.1 distribution: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Steps 0 to 2 (spike,
+   generation core, settings in the build process) are done; step 3 (the builder generates)
+   is built and tested, awaiting the owner's sandbox check. Step 4 (when the builder steps
+   aside, the offer to mark `gen/`) is next.
 3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
    the Tool Output tool window" below).
 4. Optionally, the README points to the Gradle and Maven plugins for real builds.

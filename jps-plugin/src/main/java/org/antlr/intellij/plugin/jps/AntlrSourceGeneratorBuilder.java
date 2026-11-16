@@ -1,58 +1,234 @@
 package org.antlr.intellij.plugin.jps;
 
+import com.intellij.openapi.util.io.FileUtil;
+import org.antlr.intellij.plugin.generation.AntlrGenerator;
+import org.antlr.intellij.plugin.generation.GenerationArgs;
 import org.antlr.intellij.plugin.generation.GenerationSettings;
+import org.antlr.intellij.plugin.generation.GrammarHeader;
+import org.antlr.intellij.plugin.generation.GrammarPlace;
+import org.antlr.intellij.plugin.generation.ToolMessage;
 import org.jetbrains.jps.ModuleChunk;
 import org.jetbrains.jps.builders.DirtyFilesHolder;
 import org.jetbrains.jps.builders.java.JavaSourceRootDescriptor;
+import org.jetbrains.jps.builders.storage.SourceToOutputMapping;
 import org.jetbrains.jps.incremental.BuilderCategory;
 import org.jetbrains.jps.incremental.CompileContext;
+import org.jetbrains.jps.incremental.FSOperations;
 import org.jetbrains.jps.incremental.ModuleBuildTarget;
 import org.jetbrains.jps.incremental.ModuleLevelBuilder;
+import org.jetbrains.jps.incremental.ProjectBuildException;
+import org.jetbrains.jps.incremental.fs.CompilationRound;
 import org.jetbrains.jps.incremental.messages.BuildMessage;
 import org.jetbrains.jps.incremental.messages.CompilerMessage;
+import org.jetbrains.jps.incremental.messages.ProgressMessage;
+import org.jetbrains.jps.indices.ModuleExcludeIndex;
+import org.jetbrains.jps.model.module.JpsModule;
+import org.jetbrains.jps.util.JpsPathUtil;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
- * Spike (doc/B2_JPS_BUILDER.md, step 0): generates nothing. It reports the changed grammars
- * of each module as a build warning, to prove that the build process loads this jar and hands
- * it the grammars under source roots. Step 3 replaces the body of {@link #build}.
+ * Generates recognizers from the grammars under a module's source roots, before the Java
+ * compiler runs (doc/B2_JPS_BUILDER.md).
+ * <ul>
+ * <li>When any grammar of a module changed, was removed, or lost a generated file, all the
+ *     module's grammars are regenerated: a parser depends on its {@code tokenVocab} lexer and
+ *     on imported grammars, which a per-file build would miss. Prior art: Gradle's
+ *     {@code generateGrammarSource} reruns as a whole.</li>
+ * <li>Every generated file is registered as an output of its grammar, so JPS deletes it when
+ *     the grammar changes or goes away, and generated Java is handed to the compiler in the
+ *     same build.</li>
+ * <li>Arguments come from the generation core, which the Generate action also uses.</li>
+ * </ul>
+ * Holds no state: JPS may build modules in parallel.
  * <p>
  * Prior art: IntelliJ's own source generators (Groovy stubs, GUI forms) are module-level
- * builders in category SOURCE_GENERATOR, which runs before the Java compiler.
+ * builders in category SOURCE_GENERATOR.
  */
 public class AntlrSourceGeneratorBuilder extends ModuleLevelBuilder {
-	private static final String NAME = "ANTLR 4";
+	static final String NAME = "ANTLR 4";
 	private static final String GRAMMAR_SUFFIX = ".g4";
+	private static final String JAVA_SUFFIX = ".java";
 
 	public AntlrSourceGeneratorBuilder() {
 		super(BuilderCategory.SOURCE_GENERATOR);
+	}
+
+	/** A grammar and the source root it is under. */
+	private static final class GrammarFile {
+		final File file;
+		final JavaSourceRootDescriptor root;
+
+		GrammarFile(File file, JavaSourceRootDescriptor root) {
+			this.file = file;
+			this.root = root;
+		}
 	}
 
 	@Override
 	public ExitCode build(CompileContext context,
 						  ModuleChunk chunk,
 						  DirtyFilesHolder<JavaSourceRootDescriptor, ModuleBuildTarget> dirtyFilesHolder,
-						  OutputConsumer outputConsumer) throws IOException
+						  OutputConsumer outputConsumer) throws ProjectBuildException, IOException
 	{
-		AntlrProjectSettings projectSettings = AntlrProjectSettings.of(context.getProjectDescriptor().getProject());
-		List<String> grammars = new ArrayList<>();
-		dirtyFilesHolder.processDirtyFiles((target, file, root) -> {
-			if ( file.getName().endsWith(GRAMMAR_SUFFIX) ) {
-				GenerationSettings settings = projectSettings.settingsFor(file.getPath().replace(File.separatorChar, '/'));
-				grammars.add(file.getPath()+" (package '"+settings.pkg+"', output '"+settings.outputDir+"')");
-			}
-			return true;
-		});
-		if ( grammars.isEmpty() ) return ExitCode.NOTHING_DONE;
+		ExitCode result = ExitCode.NOTHING_DONE;
+		for (ModuleBuildTarget target : chunk.getTargets()) {
+			ExitCode code = build(context, target, dirtyFilesHolder, outputConsumer);
+			if ( code==ExitCode.ABORT ) return code;
+			if ( code==ExitCode.OK ) result = code;
+		}
+		return result;
+	}
 
-		context.processMessage(new CompilerMessage(NAME, BuildMessage.Kind.WARNING,
-			"spike: build process saw changed grammars in "+chunk.getPresentableShortName()+": "+grammars));
-		return ExitCode.NOTHING_DONE;
+	private ExitCode build(CompileContext context,
+						   ModuleBuildTarget target,
+						   DirtyFilesHolder<JavaSourceRootDescriptor, ModuleBuildTarget> dirtyFilesHolder,
+						   OutputConsumer outputConsumer) throws ProjectBuildException, IOException
+	{
+		List<GrammarFile> grammars = grammarsOf(context, target);
+		if ( grammars.isEmpty() ) return ExitCode.NOTHING_DONE; // JPS deletes a removed grammar's outputs itself
+		if ( !needsGeneration(context, target, dirtyFilesHolder, grammars) ) return ExitCode.NOTHING_DONE;
+
+		context.processMessage(new ProgressMessage("Generating ANTLR recognizers ["+target.getModule().getName()+"]"));
+
+		// Grammars with the same options go to one run of the tool, which then generates a
+		// lexer before the parsers that use its vocabulary.
+		AntlrProjectSettings projectSettings = AntlrProjectSettings.of(context.getProjectDescriptor().getProject());
+		Map<List<String>, List<GrammarFile>> runs = new LinkedHashMap<>();
+		for (GrammarFile grammar : grammars) {
+			GenerationSettings settings = projectSettings.settingsFor(path(grammar.file));
+			List<String> options = GenerationArgs.of(settings, place(grammar, target.getModule())).asList();
+			runs.computeIfAbsent(options, o -> new ArrayList<>()).add(grammar);
+		}
+
+		boolean errors = false;
+		for (Map.Entry<List<String>, List<GrammarFile>> run : runs.entrySet()) {
+			context.checkCanceled();
+			List<String> args = new ArrayList<>(run.getKey());
+			for (GrammarFile grammar : run.getValue()) args.add(grammar.file.getPath());
+
+			AntlrGenerator.Result result = AntlrGenerator.run(args);
+
+			for (ToolMessage message : result.messages) {
+				context.processMessage(compilerMessage(message));
+			}
+			if ( result.failure!=null ) {
+				context.processMessage(CompilerMessage.createInternalBuilderError(NAME, result.failure));
+			}
+			errors |= result.hasErrors();
+
+			for (Map.Entry<String, List<File>> outputs : result.outputs.entrySet()) {
+				Collection<String> source = Collections.singletonList(path(new File(outputs.getKey())));
+				for (File output : outputs.getValue()) {
+					outputConsumer.registerOutputFile(target, output, source);
+					if ( output.getName().endsWith(JAVA_SUFFIX) ) {
+						// Compiled in this build, if the output directory is a source root.
+						FSOperations.markDirty(context, CompilationRound.CURRENT, output);
+					}
+				}
+			}
+		}
+		// As the Java compiler does: stop here, so nothing compiles against stale recognizers.
+		return errors ? ExitCode.ABORT : ExitCode.OK;
+	}
+
+	/** Every grammar under the target's source roots, in path order. */
+	private static List<GrammarFile> grammarsOf(CompileContext context, ModuleBuildTarget target) {
+		ModuleExcludeIndex excludes = context.getProjectDescriptor().getModuleExcludeIndex();
+		Map<String, GrammarFile> grammars = new TreeMap<>();
+		for (JavaSourceRootDescriptor root : context.getProjectDescriptor().getBuildRootIndex().getTargetRoots(target, context)) {
+			FileUtil.processFilesRecursively(root.getRootFile(), file -> {
+				if ( file.isFile() && file.getName().endsWith(GRAMMAR_SUFFIX) ) {
+					grammars.putIfAbsent(path(file), new GrammarFile(file, root));
+				}
+				return true;
+			}, dir -> !excludes.isExcluded(dir));
+		}
+		return new ArrayList<>(grammars.values());
+	}
+
+	private static boolean needsGeneration(CompileContext context,
+										   ModuleBuildTarget target,
+										   DirtyFilesHolder<JavaSourceRootDescriptor, ModuleBuildTarget> dirtyFilesHolder,
+										   List<GrammarFile> grammars) throws IOException
+	{
+		boolean[] changed = {false};
+		dirtyFilesHolder.processDirtyFiles((dirtyTarget, file, root) -> {
+			if ( dirtyTarget.equals(target) && file.getName().endsWith(GRAMMAR_SUFFIX) ) changed[0] = true;
+			return !changed[0];
+		});
+		if ( changed[0] ) return true;
+
+		for (String removed : dirtyFilesHolder.getRemovedFiles(target)) {
+			if ( removed.endsWith(GRAMMAR_SUFFIX) ) return true;
+		}
+
+		// A generated file that is gone (say, gen/ was deleted by hand) must come back, though
+		// its grammar didn't change. So must the files of a grammar that never had any.
+		SourceToOutputMapping outputs = context.getProjectDescriptor().dataManager.getSourceToOutputMap(target);
+		for (GrammarFile grammar : grammars) {
+			Collection<String> generated = outputs.getOutputs(path(grammar.file));
+			if ( generated==null || generated.isEmpty() ) return true;
+			for (String output : generated) {
+				if ( !new File(output).exists() ) return true;
+			}
+		}
+		return false;
+	}
+
+	/** What the generation core asks about a grammar's place, answered from the JPS model. */
+	private static GrammarPlace place(GrammarFile grammar, JpsModule module) {
+		File dir = grammar.file.getParentFile();
+		return new GrammarPlace(
+			dir.getPath(),
+			contentRoot(grammar.file, module).getPath(),
+			() -> GrammarHeader.fileDeclaresPackage(grammar.file.getPath()) ? null : packageOf(dir, grammar.root),
+			path -> path); // JPS expanded path macros when it loaded the settings
+	}
+
+	/** The module's content root that holds the file; like the IDE, its directory if none does. */
+	private static File contentRoot(File file, JpsModule module) {
+		File best = null;
+		for (String url : module.getContentRootsList().getUrls()) {
+			File root = new File(JpsPathUtil.urlToPath(url));
+			if ( FileUtil.isAncestor(root, file, true) && (best==null || FileUtil.isAncestor(best, root, true)) ) {
+				best = root;
+			}
+		}
+		return best!=null ? best : file.getParentFile();
+	}
+
+	/** The package of a directory: its path below its source root, after the root's package prefix. */
+	private static String packageOf(File dir, JavaSourceRootDescriptor root) {
+		String relative = FileUtil.getRelativePath(root.getRootFile(), dir);
+		if ( relative==null ) return null;
+		relative = ".".equals(relative) ? "" : relative.replace(File.separatorChar, '.');
+		String prefix = root.getPackagePrefix();
+		if ( prefix==null || prefix.isEmpty() ) return relative;
+		return relative.isEmpty() ? prefix : prefix+"."+relative;
+	}
+
+	private static CompilerMessage compilerMessage(ToolMessage message) {
+		BuildMessage.Kind kind = message.kind==ToolMessage.Kind.ERROR ? BuildMessage.Kind.ERROR
+			: message.kind==ToolMessage.Kind.WARNING ? BuildMessage.Kind.WARNING
+			: BuildMessage.Kind.INFO;
+		if ( message.file==null ) return new CompilerMessage(NAME, kind, message.summary);
+		// ANTLR counts columns from 0, the build's messages from 1.
+		return new CompilerMessage(NAME, kind, message.summary, path(new File(message.file)),
+								   -1, -1, -1, message.line, message.column+1);
+	}
+
+	/** The path as the IDE writes it, with / separators: in settings, mappings and messages. */
+	private static String path(File file) {
+		return FileUtil.toSystemIndependentName(file.getPath());
 	}
 
 	@Override

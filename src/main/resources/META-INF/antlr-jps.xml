@@ -2,7 +2,9 @@
      it declares compileServer.plugin and runs the JPS build. doc/B2_JPS_BUILDER.md. -->
 <idea-plugin>
   <extensions defaultExtensionNs="com.intellij">
-    <!-- Jars from this plugin's lib/ put on the build process's classpath. -->
-    <compileServer.plugin classpath="antlr-jps.jar"/>
+    <!-- Jars from this plugin's lib/ put on the build process's classpath: the builder and
+         the ANTLR tool it runs (with StringTemplate and its ANTLR 3 runtime). The names carry
+         versions; BuildProcessClasspathTest fails when one no longer matches a shipped jar. -->
+    <compileServer.plugin classpath="antlr-jps.jar;antlr4-4.13.2.jar;antlr4-runtime-4.13.2.jar;ST4-4.3.4.jar;antlr-runtime-3.5.3.jar"/>
   </extensions>
 </idea-plugin>
