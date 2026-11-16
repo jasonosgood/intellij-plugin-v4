@@ -1,10 +1,5 @@
 package org.antlr.intellij.plugin.parsing;
 
-import org.antlr.intellij.plugin.ToolOutput;
-import com.intellij.execution.ui.ConsoleViewContentType;
-import com.intellij.notification.Notification;
-import com.intellij.notification.NotificationType;
-import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.PathMacroManager;
@@ -38,12 +33,8 @@ import org.antlr.intellij.plugin.psi.GrammarSpecNode;
 import org.antlr.v4.runtime.misc.Utils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.stringtemplate.v4.misc.Misc;
 
 import java.io.File;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 import static com.intellij.psi.util.PsiTreeUtil.getChildOfType;
@@ -53,10 +44,11 @@ import static org.antlr.intellij.plugin.psi.MyPsiUtils.findChildrenOfType;
 // learned how to do from Grammar-Kit by Gregory Shrago
 public class RunANTLROnGrammarFile extends Task.Modal {
 	public static final Logger LOG = Logger.getInstance("RunANTLROnGrammarFile");
-	public static final String groupDisplayId = "ANTLR 4 Parser Generation";
 
 	private final VirtualFile grammarFile;
 	private final Project project;
+	/** What the run produced; null until it has run. */
+	private volatile AntlrGenerator.Result result;
 
 	/** Generates the recognizer for {@code grammarFile} into its output directory. Run only on
 	 *  the user's request (Generate ANTLR Recognizer), never on a save: code generation belongs
@@ -78,9 +70,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 		ReadAction.runBlocking(() -> antlr(grammarFile));
 	}
 
-	/** Run ANTLR tool on file according to preferences in intellij for this file.
-	 *  Returns set of generated files or empty set if error.
- 	 */
+	/** Runs the ANTLR tool on the file with its settings; the caller reports {@link #getResult}. */
 	private void antlr(VirtualFile vfile) {
 		if ( vfile==null ) return;
 
@@ -99,36 +89,19 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 		LOG.debug("args: " + Utils.join(args.iterator(), " "));
 
-		ToolOutput console = ToolOutput.getInstance(project);
-		String timeStamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Calendar.getInstance().getTime());
-		console.print(timeStamp+": antlr4 "+Misc.join(args.iterator(), " ")+"\n", ConsoleViewContentType.SYSTEM_OUTPUT);
-
-		AntlrGenerator.Result result = AntlrGenerator.run(args);
+		result = AntlrGenerator.run(args);
 		for (ToolMessage message : result.messages) {
-			console.print(message.text+"\n", message.kind==ToolMessage.Kind.ERROR
-				? ConsoleViewContentType.ERROR_OUTPUT : ConsoleViewContentType.NORMAL_OUTPUT);
+			LOG.debug(message.toString());
 		}
-		boolean hasOutput = !result.messages.isEmpty();
+		if ( result.failure!=null ) {
+			LOG.warn("antlr4 failed on "+vfile.getPath(), result.failure);
+		}
+	}
 
-		Throwable e = result.failure;
-		if ( e!=null ) {
-			StringWriter sw = new StringWriter();
-			PrintWriter pw = new PrintWriter(sw);
-			e.printStackTrace(pw);
-			String msg = sw.toString();
-			Notification notification =
-				new Notification(groupDisplayId,
-					"can't generate parser for " + vfile.getName(),
-					e.toString(),
-					NotificationType.INFORMATION);
-			Notifications.Bus.notify(notification, project);
-			console.print(timeStamp + ": antlr4 " + msg + "\n", ConsoleViewContentType.SYSTEM_OUTPUT);
-			hasOutput = true; // show console below
-		}
-
-		if ( hasOutput ) {
-			ToolOutput.showWindow(project);
-		}
+	/** What the run produced, or null if it didn't run (no grammar). */
+	@Nullable
+	public AntlrGenerator.Result getResult() {
+		return result;
 	}
 
 	/** The ANTLR tool's options for {@code vfile}, from its settings; without the grammar itself. */

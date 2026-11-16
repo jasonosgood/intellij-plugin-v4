@@ -313,6 +313,11 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     ignores that error, as the preview does (`PluginIgnoreMissingTokensFileErrorManager`). The
     error had also stopped ANTLR's analysis, hiding warnings such as `EPSILON_CLOSURE`.
     `TokenVocabIssuesTest` covers both. Checked by the owner in the sandbox (grammars-v4 `semver`).
+54. Build B.1, B.3, B.4: Generate ANTLR Recognizer reports in one notification
+    (`GenerationReport`): where the files went, or the errors with "Go to error"; it no longer
+    says "generated" when ANTLR reported errors, and no longer writes to Tool Output. In a
+    Gradle or Maven module (`ExternalBuildOf`, the IDE's side of the builder's `ExternalBuild`)
+    it steps aside and offers "Generate anyway". README and change notes updated.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

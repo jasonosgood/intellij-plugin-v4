@@ -95,6 +95,9 @@ parentheses are item numbers in [DONE.md](DONE.md).
     isn't published for current IDEs. Its version is the IDE's build number, a second place to
     change with `ideaVersion`.
   - Known gap: a settings change alone doesn't regenerate; Rebuild Project does.
+  - Generate ANTLR Recognizer agrees with the builder: in a Gradle or Maven module it steps
+    aside, offering "Generate anyway" since the build tool is known but not whether it applies
+    an ANTLR plugin (54). It reports in a notification, not a console. Prior art: Grammar-Kit.
 - **Keep stable.** Persisted settings: `ANTLRv4GrammarPropertiesComponent` (`@State
   "ANTLRGenerationPreferences"`) stores per-grammar settings keyed by path; users' stored configs
   must still load, and changing the key needs a migration. Dynamic plugin loading: the verifier

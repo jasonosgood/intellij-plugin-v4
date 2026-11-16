@@ -39,10 +39,9 @@ plain IntelliJ projects the build is JPS, which runs source-generator builders b
 compilers: annotation processing writes generated sources there; Android generated `R.java`
 with a JPS builder. Grammar-Kit and JFlex ship no JPS builder: an explicit action, plus Gradle
 plugins for real builds.
-1. **Gradle or Maven projects: the build generates.** The plugin shouldn't write a second copy
-   into `gen/`: duplicate classes, and the plugin's bundled ANTLR tool may differ from the
-   project's runtime ("ANTLR Tool version X used for code generation does not match the current
-   runtime version Y"). Detect the build's ANTLR plugin and say so, or step aside.
+1. **Gradle or Maven projects: the build generates. Done** (DONE.md item 54). Not yet checked
+   in the sandbox: Generate in a Gradle or Maven module should say "not generated" and offer
+   "Generate anyway" (tabled by the owner, 2026-11-16).
 2. **Plain JPS projects: a JPS source-generator builder. Done** (DONE.md items 48–52; design
    in [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md); the rules in [DECISIONS.md](DECISIONS.md), "Code
    generation in the JPS build"). Build, Rebuild and run configurations generate,
@@ -52,9 +51,9 @@ plugins for real builds.
      directory doesn't make the grammar dirty; Rebuild Project fixes it. A fix would store
      the arguments with the outputs and compare. Prior art: javac option changes force a
      rebuild in JPS.
-3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
-   the Tool Output tool window" below).
-4. Optionally, the README points to the Gradle and Maven plugins for real builds.
+3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification. **Done**
+   (DONE.md item 54).
+4. **README points to the Gradle and Maven plugins. Done** (DONE.md item 54).
 5. **"Cannot find tokens file" in a `tokenVocab` parser. Done** (DONE.md item 53).
 
 ## When touching the code anyway
@@ -77,14 +76,10 @@ Not on their own:
   wrong: the preview needs a parser grammar and there is none (`loadGrammars` returns no parser
   for a lexer grammar). At least say so; better, show the token stream. Prior art: `grun
   -tokens` (TestRig) and ANTLR Lab both show tokens for a lexer alone.
-- **Remove the Tool Output tool window.** It shows the ANTLR tool's console output from
-  Generate ANTLR Recognizer and grammar-load errors. Grammar errors are already editor
-  annotations; what remains is generation results. Prior art: Grammar-Kit's Generate Parser
-  Code reports in a notification balloon; build-integrated generators (Gradle `antlr`, Maven
-  `antlr4`, protobuf) report in the Build tool window. Likely: a notification (success, or
-  errors with a link to the grammar), and nothing else. `ToolOutput` is then deleted.
-  Note: `GenerateParserAction` says "parser for X generated" even when the tool reported
-  errors. (`RunANTLROnGrammarFile` is a `Task.Modal`, so it does finish first.)
+- **Remove the Tool Output tool window.** Generate reports in a notification now (DONE.md
+  item 54); the window is left with the preview's grammar-load errors (`ParsingUtils`), which
+  are also editor annotations. Decide whether the preview needs them elsewhere, then delete
+  `ToolOutput`. Prior art: build-integrated generators report in the Build tool window.
 - **Profile only when the Profiler tab is shown.** Parsing a one-line query on
   `oracle_normal.g4` takes ~330 ms, because the preview parses with exact ambiguity detection
   and profiling on (found in greenfield step 1).

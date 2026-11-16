@@ -75,13 +75,17 @@ Rebuild and run configurations generate recognizers before the compiler runs:
   the grammar, use Build > Rebuild Project; a plain Build doesn't notice.
 - To generate on save, turn on Settings > Tools > Actions on Save > Build project.
 
-**In Gradle and Maven projects** the plugin generates nothing during the build: use Gradle's
+**In Gradle and Maven projects** the plugin generates nothing, neither in the build nor from
+Generate ANTLR Recognizer: use Gradle's
 [`antlr` plugin](https://docs.gradle.org/current/userguide/antlr_plugin.html) or the
 [`antlr4-maven-plugin`](https://www.antlr.org/api/maven-plugin/latest/), so the IDE and the
-command line build the same way.
+command line build the same way. A second copy from the plugin would mean duplicate classes,
+maybe from another ANTLR version. If your build doesn't generate them, Generate's
+notification offers "Generate anyway".
 
 **On request.** Generate ANTLR Recognizer (ctrl-shift-G / meta-shift-G) runs ANTLR on the
-current grammar in any project, with the same settings.
+current grammar, with the same settings, and reports in a notification: where the files went,
+or the errors, with a link to the first one.
 
 ## Limitations
 
