@@ -27,15 +27,13 @@ saves all documents first, as Build and Run do. Code generation belongs to the b
 ### A. Save behavior (first)
 1. Done: switching tabs no longer saves (DONE.md, item 43).
 2. Done: Generate and Test Rule save all documents first (DONE.md, item 44).
-3. **Reload on any saved dependency.** The preview reloads when any grammar the previewed
-   grammar depends on (`tokenVocab`, imports) changes on disk, not only grammars open in an
-   editor (the `isFileOpen` filter in `PreviewService.GrammarSaveListener`). Then `git checkout`
-   or an external edit refreshes it too. Prior art: VFS listeners (`VFS_CHANGES`) see every
-   save and refresh, whatever caused it.
+3. Done: the preview reloads on changes to any grammar it uses, open or not (DONE.md, item 45).
 4. **No `.tokens` files written on save.** Saving a lexer that a previewed grammar uses runs
    `RunANTLROnGrammarFile` (from `PreviewService.grammarSaved`), which writes the lexer's
    `.tokens` file into the project. That is preview plumbing; check whether `GrammarCache` can
-   hand the lexer's vocabulary to the parser in memory.
+   hand the lexer's vocabulary to the parser in memory. Then also reload on deleting or moving
+   a grammar the preview uses (`GrammarSaveListener` skips `VFileDeleteEvent` and
+   `VFileMoveEvent` for now, since the save path would run the tool on a file that's gone).
 5. **Remove the per-grammar `autoGen` setting** ("Auto-generate parsers upon save"). It is on
    by default, yet saving a combined or parser grammar never generated (same on upstream
    `master`): only a lexer saved while its parser was previewed ran the tool. Generate-on-save
@@ -92,7 +90,9 @@ Not on their own:
 - **Show that the preview is working.** Loading or parsing a large grammar (`refactorme.g4`,
   `oracle_normal.g4`) takes seconds with no sign of progress, so the plugin looks hung. Prior
   art: the platform's `JBLoadingPanel` (a spinner and "Loading…" over a panel, as in the VCS
-  log and diff viewers) and `AsyncProcessIcon` for a small busy marker.
+  log and diff viewers) and `AsyncProcessIcon` for a small busy marker. Today a parse running
+  past `SLOW_PARSE_NOTICE_DELAY_MS` only enables the Cancel Parse button (`parseSlow`); a
+  grammar load shows nothing.
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 
 ## Tabled

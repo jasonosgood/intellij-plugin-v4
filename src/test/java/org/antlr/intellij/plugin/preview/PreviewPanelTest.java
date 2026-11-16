@@ -1,6 +1,7 @@
 package org.antlr.intellij.plugin.preview;
 
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -8,6 +9,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
@@ -194,6 +196,21 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 			doc.setText(doc.getText().replace("DOT  : '.';", "PERIOD : '.';")));
 		select(parser);
 		assertTrue(FileDocumentManager.getInstance().isDocumentUnsaved(doc));
+	}
+
+	/** A lexer changed on disk while not open (VCS checkout, another editor) reloads the parser
+	 *  that uses it, without becoming a previewed grammar itself. */
+	public void testChangingAClosedLexerOnDiskReloadsTheParser() throws Exception {
+		select(parser);
+		assertFalse(FileEditorManager.getInstance(getProject()).isFileOpen(lexer));
+		WriteAction.runAndWait(() ->
+			VfsUtil.saveText(lexer, VfsUtil.loadText(lexer).replace("DOT  : '.';", "PERIOD : '.';")));
+		preview.grammarFilesChanged(List.of(lexer));
+		waitForGrammarLoads();
+		LexerGrammar lexerGrammar = preview.getPreviewState(parser).lexerGrammar();
+		assertNotNull(lexerGrammar);
+		assertTrue(lexerGrammar.tokenNameToTypeMap.containsKey("PERIOD"));
+		assertFalse(preview.hasPreviewState(lexer));
 	}
 
 	/** Test Rule saves all documents first, as Run does, so an unsaved lexer edit isn't left behind. */

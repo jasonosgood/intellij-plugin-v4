@@ -7,7 +7,7 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.CheckedDisposable;
@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -178,15 +180,40 @@ public final class PreviewService implements Disposable {
 		}
 	}
 
+	/** Grammar files changed on disk: saved in the IDE, created, or changed outside it (VCS
+	 *  checkout, another editor). Reloads those this preview uses: a previewed grammar, or a
+	 *  grammar a previewed one read when it loaded ({@code tokenVocab} lexer, imports), whether
+	 *  or not it is open in an editor. Others, including other projects' grammars, are ignored.
+	 *  Prior art: VFS listeners see every change to a file, whatever caused it.
+	 */
+	public void grammarFilesChanged(@NotNull Collection<VirtualFile> files) {
+		for (VirtualFile file : files) {
+			if ( isPreviewInput(file) ) grammarSaved(file);
+		}
+	}
+
+	/** Whether {@code file} is a previewed grammar or one a previewed grammar's load read. */
+	private boolean isPreviewInput(@NotNull VirtualFile file) {
+		if ( previewStates.containsKey(file) ) return true;
+		GrammarCache cache = GrammarCache.getInstance(project);
+		return previewStates.keySet().stream().anyMatch(f -> {
+			GrammarCache.Loaded loaded = cache.peek(f);
+			return loaded!=null && loaded.dependsOn(file);
+		});
+	}
+
 	/** A grammar was saved (or may have been: auto-refresh calls this after each highlighting
-	 *  pass). Reloads every open grammar whose inputs changed, the saved one first; does nothing
-	 *  if none did. Superseded saves need no bookkeeping: a queued load finds the cache fresh.
+	 *  pass). Reloads every previewed grammar whose inputs changed, the saved one first (if it is
+	 *  previewed itself); does nothing if none did. Superseded saves need no bookkeeping: a
+	 *  queued load finds the cache fresh.
 	 */
 	public void grammarSaved(@NotNull VirtualFile grammarFile) {
 		runGrammarLoad(
 			() -> {
 				GrammarCache cache = GrammarCache.getInstance(project);
-				boolean savedStale = cache.isStale(grammarFile);
+				// a lexer used by a previewed parser needn't be previewed itself, nor open
+				boolean previewed = previewStates.containsKey(grammarFile);
+				boolean savedStale = previewed && cache.isStale(grammarFile);
 				List<VirtualFile> dependents = previewStates.keySet().stream()
 					.filter(f -> !f.equals(grammarFile))
 					.filter(f -> {
@@ -200,7 +227,7 @@ public final class PreviewService implements Disposable {
 				}
 				LOG.debug("grammarSaved " + grammarFile.getPath() + " " + project.getName());
 				Map<VirtualFile, GrammarCache.Loaded> loads = new LinkedHashMap<>();
-				loads.put(grammarFile, cache.get(grammarFile));
+				if ( previewed ) loads.put(grammarFile, cache.get(grammarFile));
 				if ( !dependents.isEmpty() ) {
 					// a lexer or imported grammar: regenerate its .tokens file for the grammars using it
 					ProgressManager.getInstance().run(
@@ -303,15 +330,16 @@ public final class PreviewService implements Disposable {
 		@Override
 		public void after(@NotNull List<? extends VFileEvent> events) {
 			if ( ApplicationManager.getApplication().isUnitTestMode() ) return;
+			List<VirtualFile> changed = new ArrayList<>();
 			for (VFileEvent event : events) {
-				if ( !(event instanceof VFileContentChangeEvent) ) continue;
-				final VirtualFile vfile = ((VFileContentChangeEvent) event).getFile();
-				if ( !vfile.getName().endsWith(".g4") ) continue;
-				// VFS events are application-wide: ignore saves of grammars that aren't open in
-				// this project, or another project's save would repaint our preview.
-				if ( !FileEditorManager.getInstance(project).isFileOpen(vfile) ) continue;
-				grammarSaved(vfile);
+				// content changes and creations (a lexer looked for but absent is an input too);
+				// deletions and moves wait until a save no longer runs the ANTLR tool on the file
+				if ( !(event instanceof VFileContentChangeEvent || event instanceof VFileCreateEvent) ) continue;
+				VirtualFile vfile = event.getFile();
+				if ( vfile!=null && vfile.getName().endsWith(".g4") ) changed.add(vfile);
 			}
+			// VFS events are application-wide; grammarFilesChanged ignores other projects' grammars
+			if ( !changed.isEmpty() ) grammarFilesChanged(changed);
 		}
 	}
 }

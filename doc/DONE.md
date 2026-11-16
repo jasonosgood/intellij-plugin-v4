@@ -253,6 +253,15 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     it and generated nothing, expecting the save to generate; the save only did that for a lexer
     whose parser was previewed. Generate now always generates. Tests:
     `PreviewPanelTest.testTestRuleSavesAllDocuments`, `testGenerateSavesAllDocumentsAndGenerates`.
+45. Saving A.3: the preview reloads when any grammar it uses changes on disk, open in an editor
+    or not: a previewed grammar, or one a previewed grammar's load read (`tokenVocab` lexer,
+    imports, a lexer looked for but absent). So a `git checkout` or an edit outside the IDE
+    refreshes it too. `PreviewService.grammarFilesChanged` filters by the cached loads' inputs,
+    which also keeps other projects' grammars out (VFS events are application-wide); the VFS
+    listener passes content changes and creations. A changed grammar that isn't previewed
+    itself only reloads the grammars using it. Prior art: VFS listeners see every change,
+    whatever caused it. Test: `PreviewPanelTest.testChangingAClosedLexerOnDiskReloadsTheParser`
+    (fails with the old open-files filter).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.
