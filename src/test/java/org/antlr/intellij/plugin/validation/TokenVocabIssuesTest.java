@@ -9,6 +9,7 @@ import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import org.antlr.v4.tool.ErrorType;
 
 import java.util.List;
+import java.util.Objects;
 
 /** The editor's grammar checks know a {@code tokenVocab} lexer's tokens from the lexer grammar
  *  itself, as the editor shows it, not from a generated {@code .tokens} file. Light fixtures
@@ -21,6 +22,21 @@ public class TokenVocabIssuesTest extends AntlrFixtureTestCase {
 		myFixture.addFileToProject("L.g4", LEXER);
 		PsiFile parser = myFixture.addFileToProject("P.g4", "parser grammar P;\noptions { tokenVocab=L; }\ns : A B ;\n");
 		assertEquals(List.of(), implicitTokens(parser));
+	}
+
+	/** With no generated {@code .tokens} file, nothing is reported: not "cannot find tokens
+	 *  file" (B.5), which ANTLR raises though the vocabulary came from the lexer grammar. */
+	public void testNoIssuesWithoutATokensFile() {
+		myFixture.addFileToProject("L.g4", LEXER);
+		PsiFile parser = myFixture.addFileToProject("P.g4", "parser grammar P;\noptions { tokenVocab=L; }\ns : A B ;\n");
+		assertEquals(List.of(), errorTypes(parser));
+	}
+
+	/** The missing-file error also stopped ANTLR before its analysis, hiding what it finds. */
+	public void testAnalysisRunsWithoutATokensFile() {
+		myFixture.addFileToProject("L.g4", LEXER);
+		PsiFile parser = myFixture.addFileToProject("P.g4", "parser grammar P;\noptions { tokenVocab=L; }\ns : (A?)* ;\n");
+		assertEquals(List.of(ErrorType.EPSILON_CLOSURE), errorTypes(parser));
 	}
 
 	/** Control: a token the lexer doesn't define is still reported. */
@@ -46,11 +62,23 @@ public class TokenVocabIssuesTest extends AntlrFixtureTestCase {
 
 	/** Runs the annotator's two phases, as {@code ANTLRv4ExternalAnnotator} does. */
 	private List<String> implicitTokens(PsiFile grammar) {
-		GrammarIssuesCollector.Input input = ReadAction.computeBlocking(() -> GrammarIssuesCollector.snapshot(grammar));
-		assertNotNull(input);
-		return GrammarIssuesCollector.collectGrammarIssues(input).stream()
+		return issues(grammar).stream()
 			.filter(issue -> issue.getMsg()!=null && issue.getMsg().getErrorType()==ErrorType.IMPLICIT_TOKEN_DEFINITION)
 			.map(issue -> issue.getMsg().getArgs()[0].toString())
 			.toList();
+	}
+
+	/** ANTLR's errors and warnings; the plugin's own infos (unused parser rule) have no type. */
+	private List<ErrorType> errorTypes(PsiFile grammar) {
+		return issues(grammar).stream()
+			.map(issue -> issue.getMsg()==null ? null : issue.getMsg().getErrorType())
+			.filter(Objects::nonNull)
+			.toList();
+	}
+
+	private List<GrammarIssue> issues(PsiFile grammar) {
+		GrammarIssuesCollector.Input input = ReadAction.computeBlocking(() -> GrammarIssuesCollector.snapshot(grammar));
+		assertNotNull(input);
+		return GrammarIssuesCollector.collectGrammarIssues(input);
 	}
 }

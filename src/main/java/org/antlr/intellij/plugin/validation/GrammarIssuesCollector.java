@@ -4,6 +4,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
+import org.antlr.intellij.plugin.PluginIgnoreMissingTokensFileErrorManager;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.antlr.intellij.plugin.psi.MyPsiUtils;
@@ -143,6 +144,11 @@ public class GrammarIssuesCollector {
                     : loadVocabGrammar(input.vocabPath, input.vocabText, input.libDirectory, args);
                 if ( vocab!=null ) {
                     g.importVocab(vocab);
+                    // process() still looks for the lexer's .tokens file and, with none
+                    // generated, reports an error that also stops the analysis after it. The
+                    // vocabulary is already here, so ignore that error, as the preview does.
+                    antlr.errMgr = new PluginIgnoreMissingTokensFileErrorManager(antlr);
+                    antlr.errMgr.setFormat(antlr.msgFormat);
                 }
                 else {
                     // no lexer grammar beside this one: a .tokens file from elsewhere, via -lib

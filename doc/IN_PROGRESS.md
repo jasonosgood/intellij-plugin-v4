@@ -55,16 +55,7 @@ plugins for real builds.
 3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
    the Tool Output tool window" below).
 4. Optionally, the README points to the Gradle and Maven plugins for real builds.
-5. **Known regression from A.4: "cannot find tokens file" in a `tokenVocab` parser.** With no
-   generated `.tokens` (e.g. `gen/` deleted), the parser's editor shows `error(114):
-   SemanticVersionParser.g4:7:17: cannot find tokens file …/SemanticVersionLexer.tokens` on the
-   `tokenVocab` option (seen in the sandbox on grammars-v4 `semver`). Cause:
-   `GrammarIssuesCollector` imports the lexer's tokens in memory, but ANTLR's `process()` still
-   looks for the file and reports `CANNOT_FIND_TOKENS_FILE_REFD_IN_GRAMMAR`. Before A.4, a save
-   regenerated the file, which hid this. Likely fix: when the vocabulary came from the lexer
-   grammar, ignore that error, as the preview's `PluginIgnoreMissingTokensFileErrorManager`
-   does; then assert in `TokenVocabIssuesTest` that no issue is reported at all, not only no
-   implicit tokens. Owner's call (2026-11-16): fix together with B.
+5. **"Cannot find tokens file" in a `tokenVocab` parser. Done** (DONE.md item 53).
 
 ## When touching the code anyway
 Not on their own:

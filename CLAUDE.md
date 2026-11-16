@@ -27,7 +27,7 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 ## Build and run
 - Target: IntelliJ 2026.2.1 (since-build 262), Java 25 toolchain, Gradle 9.7, IntelliJ Platform
   Gradle Plugin 2.x. Clone with `--recurse-submodules` (or `git submodule update --init`).
-- `./gradlew test`: all tests (180, light fixtures plus plain JUnit; 24 are in `jps-plugin`:
+- `./gradlew test`: all tests (182, light fixtures plus plain JUnit; 24 are in `jps-plugin`:
   the generation core shared with the IDE and the code that runs in IntelliJ's build process,
   both Java 11 with no IDE classes). Add `--rerun` to force a
   rerun when Gradle thinks the task is up to date. `ANTLR_PERF=1` also runs

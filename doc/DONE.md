@@ -308,6 +308,11 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     owner in the sandbox. Temp files and sandbox test projects moved to `tmp/` in the repo.
 52. Build B.2 step 5: README ("Generating code", and the stale "builds on save" text removed),
     change notes, ARCHITECTURE.md ("Code generation"), DECISIONS.md.
+53. Build B.5: no "cannot find tokens file" (error 114) on a `tokenVocab` parser without a
+    generated `.tokens` file. Once the lexer grammar's vocabulary is imported, the annotator
+    ignores that error, as the preview does (`PluginIgnoreMissingTokensFileErrorManager`). The
+    error had also stopped ANTLR's analysis, hiding warnings such as `EPSILON_CLOSURE`.
+    `TokenVocabIssuesTest` covers both. Checked by the owner in the sandbox (grammars-v4 `semver`).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.
