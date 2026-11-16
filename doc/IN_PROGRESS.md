@@ -104,6 +104,10 @@ Not on their own:
   past `SLOW_PARSE_NOTICE_DELAY_MS` only enables the Cancel Parse button (`parseSlow`); a
   grammar load shows nothing.
 - Owner has more UX ideas for working on a grammar and its samples side by side.
+- **Sample IntelliJ + ANTLR4 project** (owner, 2026-11-16). A small project to open in the
+  sandbox: a grammar, sample inputs, and Java code that uses the generated parser, built by
+  the JPS builder (B). Doubles as a manual test bed and a demo for users. Prior art: the
+  ANTLR `antlr4-examples` repo and the platform's sample plugins.
 
 ## Tabled
 - **2. Extract Rule on lexer rules should create a `fragment`.** Extracting `[0-9]+` from `INT`
