@@ -50,8 +50,8 @@ plugins for real builds.
    per-grammar settings (output dir, package, language, listener/visitor) must be readable by
    JPS (a JPS model serializer, or move them to a file JPS reads or the grammar's
    `options {}`); JPS build tests. Design draft, with the API checked against the SDK docs and
-   the 2026.2.1 distribution: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Questions answered
-   2026-11-16; step 0 (spike) is built and tested, awaiting the owner's sandbox check.
+   the 2026.2.1 distribution: [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Step 0 (spike) is
+   done; step 1 (the generation core) is built and tested, awaiting the owner's sandbox check.
 3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
    the Tool Output tool window" below).
 4. Optionally, the README points to the Gradle and Maven plugins for real builds.
@@ -74,6 +74,13 @@ Not on their own:
   strings today; when adding tests, not as a rewrite.
 
 ## Later: preview UX (after the plugin is stable)
+- **Reload the plugin in a running IDE** (owner, 2026-11-16: tweak the plugin while using it
+  for real work). The plugin is dynamic (the verifier says so), but rebuilding under a running
+  sandbox half-reloads it: stale classes, "Cannot find suitable constructor". That is a failed
+  unload: something still holds a plugin class. Find what (the unload report in `idea.log`; the
+  platform can dump a heap snapshot when an unload fails), fix it, then let
+  `launch-sandbox.sh` rebuild without `--restart`. Prior art: the platform's own dynamic
+  plugin reload, which `runIde` uses for auto-reload.
 - **Lexer grammar on its own.** Previewing `SemanticVersionLexer.g4` shows "Issues with parser
   and/or lexer grammar(s) prevent preview; see ANTLR 'Tool Output' pane", though nothing is
   wrong: the preview needs a parser grammar and there is none (`loadGrammars` returns no parser

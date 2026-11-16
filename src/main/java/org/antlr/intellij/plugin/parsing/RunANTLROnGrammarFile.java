@@ -7,6 +7,7 @@ import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.components.PathMacroManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
@@ -26,10 +27,13 @@ import com.intellij.psi.PsiManager;
 import org.antlr.intellij.adaptor.lexer.RuleIElementType;
 import org.antlr.intellij.plugin.ANTLRv4TokenTypes;
 import org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarProperties;
+import org.antlr.intellij.plugin.generation.AntlrGenerator;
+import org.antlr.intellij.plugin.generation.GenerationArgs;
+import org.antlr.intellij.plugin.generation.GrammarPlace;
+import org.antlr.intellij.plugin.generation.ToolMessage;
 import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
 import org.antlr.intellij.plugin.psi.AtAction;
 import org.antlr.intellij.plugin.psi.GrammarSpecNode;
-import org.antlr.v4.Tool;
 import org.antlr.v4.runtime.misc.Utils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -45,13 +49,10 @@ import java.util.regex.Pattern;
 import static com.intellij.psi.util.PsiTreeUtil.getChildOfType;
 import static org.antlr.intellij.plugin.configdialogs.ANTLRv4GrammarPropertiesStore.getGrammarProperties;
 import static org.antlr.intellij.plugin.psi.MyPsiUtils.findChildrenOfType;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 // learned how to do from Grammar-Kit by Gregory Shrago
 public class RunANTLROnGrammarFile extends Task.Modal {
 	public static final Logger LOG = Logger.getInstance("RunANTLROnGrammarFile");
-	public static final String OUTPUT_DIR_NAME = "gen" ;
 	public static final String groupDisplayId = "ANTLR 4 Parser Generation";
 
 	private static final Pattern PACKAGE_DEFINITION_REGEX = Pattern.compile("package\\s+[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+[0-9a-z_];");
@@ -100,19 +101,19 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 		LOG.debug("args: " + Utils.join(args.iterator(), " "));
 
-		Tool antlr = new Tool(args.toArray(new String[args.size()]));
-
 		ToolOutput console = ToolOutput.getInstance(project);
 		String timeStamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Calendar.getInstance().getTime());
 		console.print(timeStamp+": antlr4 "+Misc.join(args.iterator(), " ")+"\n", ConsoleViewContentType.SYSTEM_OUTPUT);
-		antlr.removeListeners();
-		RunANTLRListener listener = new RunANTLRListener(antlr, console);
-		antlr.addListener(listener);
 
-		try {
-			antlr.processGrammarsOnCommandLine();
+		AntlrGenerator.Result result = AntlrGenerator.run(args);
+		for (ToolMessage message : result.messages) {
+			console.print(message.text+"\n", message.kind==ToolMessage.Kind.ERROR
+				? ConsoleViewContentType.ERROR_OUTPUT : ConsoleViewContentType.NORMAL_OUTPUT);
 		}
-		catch (Throwable e) {
+		boolean hasOutput = !result.messages.isEmpty();
+
+		Throwable e = result.failure;
+		if ( e!=null ) {
 			StringWriter sw = new StringWriter();
 			PrintWriter pw = new PrintWriter(sw);
 			e.printStackTrace(pw);
@@ -124,76 +125,31 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 					NotificationType.INFORMATION);
 			Notifications.Bus.notify(notification, project);
 			console.print(timeStamp + ": antlr4 " + msg + "\n", ConsoleViewContentType.SYSTEM_OUTPUT);
-			listener.hasOutput = true; // show console below
+			hasOutput = true; // show console below
 		}
 
-		if ( listener.hasOutput ) {
+		if ( hasOutput ) {
 			ToolOutput.showWindow(project);
 		}
 	}
 
+	/** The ANTLR tool's options for {@code vfile}, from its settings; without the grammar itself. */
 	public static List<String> getANTLRArgsAsList(Project project, VirtualFile vfile) {
-		Map<String,String> argMap = getANTLRArgs(project, vfile);
-		List<String> args = new ArrayList<>();
-		for (String option : argMap.keySet()) {
-			args.add(option);
-			String value = argMap.get(option);
-			if ( value.length()!=0 ) {
-				args.add(value);
-			}
-		}
-		return args;
+		return generationArgs(project, vfile).asList();
 	}
 
-	private static Map<String,String> getANTLRArgs(Project project, VirtualFile vfile) {
-		Map<String,String> args = new HashMap<>();
+	/** Hands the generation core the grammar's settings and what only the IDE knows about its
+	 *  place: its content root, the package of its directory, the project's path macros.
+	 */
+	private static GenerationArgs generationArgs(Project project, VirtualFile vfile) {
 		ANTLRv4GrammarProperties grammarProperties = getGrammarProperties(project, vfile);
-		String sourcePath = getParentDir(vfile);
-
-		String package_ = grammarProperties.getPackage();
-		if ( isBlank(package_) && !hasPackageDeclarationInHeader(project, vfile)) {
-			package_ = packageNameOf(project, vfile.getParent());
-		}
-		if ( isNotBlank(package_) ) {
-			args.put("-package", package_);
-		}
-
-		String language = grammarProperties.getLanguage();
-		if ( isNotBlank(language) ) {
-			args.put("-Dlanguage="+language, "");
-		}
-
-		// create gen dir at root of project by default, but add in package if any
-		VirtualFile contentRoot = getContentRoot(project, vfile);
-		String outputDirName = grammarProperties.resolveOutputDirName(project, contentRoot, package_);
-		args.put("-o", outputDirName);
-
-		String libDir = grammarProperties.resolveLibDir(project, sourcePath);
-		File f = new File(libDir);
-		if ( !f.isAbsolute() ) { // if not absolute file spec, it's relative to project root
-			libDir = contentRoot.getPath()+File.separator+libDir;
-		}
-		args.put("-lib", libDir);
-
-		String encoding = grammarProperties.getEncoding();
-		if ( isNotBlank(encoding) ) {
-			args.put("-encoding", encoding);
-		}
-
-		if ( grammarProperties.shouldGenerateParseTreeListener() ) {
-			args.put("-listener", "");
-		}
-		else {
-			args.put("-no-listener", "");
-		}
-		if ( grammarProperties.shouldGenerateParseTreeVisitor() ) {
-			args.put("-visitor", "");
-		}
-		else {
-			args.put("-no-visitor", "");
-		}
-
-		return args;
+		PathMacroManager macros = PathMacroManager.getInstance(project);
+		GrammarPlace place = new GrammarPlace(
+			getParentDir(vfile),
+			getContentRoot(project, vfile).getPath(),
+			() -> hasPackageDeclarationInHeader(project, vfile) ? null : packageNameOf(project, vfile.getParent()),
+			macros::expandPath);
+		return GenerationArgs.of(grammarProperties.toGenerationSettings(), place);
 	}
 
 	private static boolean hasPackageDeclarationInHeader(Project project, VirtualFile grammarFile) {
@@ -261,11 +217,6 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 	}
 
 	public String getOutputDirName() {
-		VirtualFile contentRoot = getContentRoot(project, grammarFile);
-		Map<String,String> argMap = getANTLRArgs(project, grammarFile);
-		String package_ = argMap.get("-package");
-
-		return getGrammarProperties(project, grammarFile)
-				.resolveOutputDirName(project, contentRoot, package_);
+		return generationArgs(project, grammarFile).outputDir();
 	}
 }

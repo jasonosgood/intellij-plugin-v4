@@ -20,6 +20,13 @@ dependencies {
         // The JPS builder API (org.jetbrains.jps.*) ships with the Java plugin.
         bundledPlugin 'com.intellij.java'
     }
+    // The plugin ships the ANTLR tool in lib/; this jar only compiles against it.
+    compileOnly("org.antlr:antlr4:$antlr4Version") {
+        exclude group: 'com.ibm.icu', module: 'icu4j'
+    }
+    testImplementation("org.antlr:antlr4:$antlr4Version") {
+        exclude group: 'com.ibm.icu', module: 'icu4j'
+    }
 }
 
 // The build process may run on the project's JDK rather than the IDE's runtime, and the JPS

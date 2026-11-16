@@ -117,8 +117,9 @@ dependencies {
     compileOnly sourceSets.xl.output
     testImplementation sourceSets.xl.output
     implementation "org.jfree:org.jfree.svg:5.0.7"
-    // The JPS builder: only shipped in lib/, for the build process (META-INF/antlr-jps.xml).
-    runtimeOnly project(':jps-plugin')
+    // The generation core, shared with the JPS builder, which the build process loads from
+    // the same jar in lib/ (META-INF/antlr-jps.xml).
+    implementation project(':jps-plugin')
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.mockito:mockito-core:5.20.0"
 }

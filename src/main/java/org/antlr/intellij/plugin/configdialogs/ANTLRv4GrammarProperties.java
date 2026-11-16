@@ -1,17 +1,10 @@
 package org.antlr.intellij.plugin.configdialogs;
 
-import com.intellij.openapi.components.PathMacroManager;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.xmlb.annotations.OptionTag;
 import com.intellij.util.xmlb.annotations.Property;
 import com.intellij.util.xmlb.annotations.Tag;
+import org.antlr.intellij.plugin.generation.GenerationSettings;
 import org.antlr.intellij.plugin.parsing.CaseChangingStrategy;
-import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
-
-import java.io.File;
-
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 /**
  * Holds all the settings related to a given grammar file. These settings
@@ -121,30 +114,9 @@ public class ANTLRv4GrammarProperties implements Cloneable {
         return caseChangingStrategy;
     }
 
-    public String resolveOutputDirName(Project project, VirtualFile contentRoot, String package_) {
-        String outputDirName = outputDir.isEmpty() ? RunANTLROnGrammarFile.OUTPUT_DIR_NAME : outputDir;
-
-        outputDirName = PathMacroManager.getInstance(project).expandPath(outputDirName);
-
-        File f = new File(outputDirName);
-        if (!f.isAbsolute()) { // if not absolute file spec, it's relative to project root
-            outputDirName = contentRoot.getPath() + File.separator + outputDirName;
-        }
-        // add package if any
-        if ( isNotBlank(package_) ) {
-            outputDirName += File.separator + package_.replace('.', File.separatorChar);
-        }
-        return outputDirName;
-    }
-
-    public String resolveLibDir(Project project, String defaultValue) {
-        String libDir = getLibDir();
-
-        if ( libDir==null || libDir.equals("") ) {
-            libDir = defaultValue;
-        }
-
-        return PathMacroManager.getInstance(project).expandPath(libDir);
+    /** The code generation settings as plain data, for the generation core. */
+    public GenerationSettings toGenerationSettings() {
+        return new GenerationSettings(outputDir, libDir, encoding, pkg, language, generateListener, generateVisitor);
     }
 
     @Override

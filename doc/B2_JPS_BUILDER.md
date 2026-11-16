@@ -1,6 +1,6 @@
 # B.2 design: code generation in the JPS build
 
-Status: design accepted by the owner (2026-11-16); step 0 (the spike) is built. Scope is item B.2 of
+Status: design accepted by the owner (2026-11-16); step 0 is done and step 1 is built. Scope is item B.2 of
 [IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
 configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
 Generate action's reporting (B.3) are separate items; where they touch this one it says so.
@@ -89,8 +89,9 @@ no IDE classes, compiled for Java 11:
 The Generate action and the builder both call it, so they can't disagree about where files go.
 Two inputs differ by caller and are passed in: the package of the grammar's directory (IDE:
 `ProjectFileIndex`; build: the JPS source root and its package prefix) and path macros
-(`$PROJECT_DIR$`). "Does `@header` declare a package" moves from PSI plus a regex to ANTLR's own
-grammar AST, which both sides have.
+(`$PROJECT_DIR$`). "Does `@header` declare a package" is part of the first: the IDE keeps
+answering it from PSI, which sees unsaved text and is already parsed (the editor's checks ask
+on every change); the builder will answer it from ANTLR's own grammar AST.
 
 Prior art: `groovy-constants-rt.jar` and `javaFX-common.jar` are exactly this: a jar on both the
 IDE's and the build process's classpath.
@@ -161,8 +162,15 @@ Each tested, checked in the sandbox and committed on its own.
    the subproject gets the JPS API with IntelliJ Platform Gradle Plugin 2.x, and whether
    `JpsBuildTestCase` is obtainable. If either fails, stop and rethink before step 1.
 1. **Extract the core** from `RunANTLROnGrammarFile`; the Generate action uses it. No behavior
-   change; characterization tests first.
-2. **Settings serializer**: the builder's process loads `ANTLRGenerationPreferences`.
+   change; characterization tests first. Built (2026-11-16): package
+   `org.antlr.intellij.plugin.generation` in `jps-plugin` (`GenerationSettings`,
+   `GrammarPlace`, `GenerationArgs`, `AntlrGenerator`, `ToolMessage`). The Generate action
+   now prints the tool's messages when the run ends, not as they come; the run is modal, so
+   nothing shows the difference. Options keep a fixed order (they came from a `HashMap`).
+2. **Settings serializer**: the builder's process loads `ANTLRGenerationPreferences`. The
+   settings lookup (exact path, wildcard, `*`, default) moves to the core here, not in step 1:
+   it uses the IDE's `WildcardFileNameMatcher`, which the build process may not have, so the
+   move needs its own tests against that matcher.
 3. **The builder**: generate, register outputs, mark generated sources dirty, report messages.
 4. **Conditions and warnings** (decision 5, version drift).
 5. README, `<change-notes>`, ARCHITECTURE.md; move this doc's decisions to DECISIONS.md.
