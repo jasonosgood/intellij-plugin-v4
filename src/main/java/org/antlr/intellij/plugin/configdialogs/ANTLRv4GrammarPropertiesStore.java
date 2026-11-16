@@ -1,12 +1,10 @@
 package org.antlr.intellij.plugin.configdialogs;
 
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileTypes.WildcardFileNameMatcher;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.xmlb.annotations.Property;
+import org.antlr.intellij.plugin.generation.SettingsLookup;
 import org.antlr.intellij.plugin.parsing.CaseChangingStrategy;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,8 +14,6 @@ import java.util.Objects;
  * Stores settings related to code generation per grammar file.
  */
 public class ANTLRv4GrammarPropertiesStore {
-
-	private static final Logger logger = Logger.getInstance(ANTLRv4GrammarPropertiesStore.class.getName());
 
 	static final ANTLRv4GrammarProperties DEFAULT_GRAMMAR_PROPERTIES = initDefaultGrammarProperties();
 
@@ -29,19 +25,10 @@ public class ANTLRv4GrammarPropertiesStore {
 	}
 
 	public ANTLRv4GrammarProperties getGrammarProperties(String grammarFile) {
-		ANTLRv4GrammarProperties grammarSettings = findSettingsForFile(grammarFile);
-
-		if ( grammarSettings==null ) {
-			ANTLRv4GrammarProperties projectSettings = findSettingsForFile("*");
-
-			if ( projectSettings==null ) {
-				return ANTLRv4GrammarPropertiesStore.DEFAULT_GRAMMAR_PROPERTIES;
-			}
-
-			return projectSettings;
-		}
-
-		return grammarSettings;
+		// The rules (exact path, wildcard, the project's "*" entry, defaults) are shared with
+		// the JPS builder, which reads these settings from the project files.
+		return SettingsLookup.find(perGrammarGenerationSettings, settings -> settings.fileName,
+								   grammarFile, DEFAULT_GRAMMAR_PROPERTIES);
 	}
 
 	private ANTLRv4GrammarProperties getOrCreateGrammarProperties(String grammarFile) {
@@ -58,35 +45,6 @@ public class ANTLRv4GrammarPropertiesStore {
 		add(newProperties);
 
 		return newProperties;
-	}
-
-	@Nullable
-	private ANTLRv4GrammarProperties findSettingsForFile(String fileName) {
-		for (ANTLRv4GrammarProperties settings : perGrammarGenerationSettings) {
-			if (settings.fileName.equals(fileName)) {
-				return settings;
-			}
-		}
-
-		for (ANTLRv4GrammarProperties settings : perGrammarGenerationSettings) {
-			if (matchesWildcardPattern(fileName, settings)) {
-				return settings;
-			}
-		}
-
-		return null;
-	}
-
-	private boolean matchesWildcardPattern(String fileName, ANTLRv4GrammarProperties settings) {
-		try {
-			WildcardFileNameMatcher wildcardFileNameMatcher = new WildcardFileNameMatcher(settings.fileName);
-			if (wildcardFileNameMatcher.acceptsCharSequence(fileName)) {
-				return true;
-			}
-		} catch (Exception e){
-			logger.warn("Unable to check if wildcard matches file name: "+fileName, e);
-		}
-		return false;
 	}
 
 	public static ANTLRv4GrammarProperties getGrammarProperties(Project project, VirtualFile grammarFile) {

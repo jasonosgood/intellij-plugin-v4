@@ -1,6 +1,6 @@
 # B.2 design: code generation in the JPS build
 
-Status: design accepted by the owner (2026-11-16); step 0 is done and step 1 is built. Scope is item B.2 of
+Status: design accepted by the owner (2026-11-16); steps 0 and 1 are done, step 2 is built. Scope is item B.2 of
 [IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
 configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
 Generate action's reporting (B.3) are separate items; where they touch this one it says so.
@@ -170,7 +170,17 @@ Each tested, checked in the sandbox and committed on its own.
 2. **Settings serializer**: the builder's process loads `ANTLRGenerationPreferences`. The
    settings lookup (exact path, wildcard, `*`, default) moves to the core here, not in step 1:
    it uses the IDE's `WildcardFileNameMatcher`, which the build process may not have, so the
-   move needs its own tests against that matcher.
+   move needs its own tests against that matcher. Built (2026-11-16):
+   - The build process does have `WildcardFileNameMatcher` (it ships in the JPS model jar), so
+     `SettingsLookup` in the core uses that same class for both sides; nothing is reimplemented.
+   - The state is in `.idea/misc.xml`. `AntlrModelSerializerExtension` loads it into the JPS
+     project as `AntlrProjectSettings`. JPS expands path macros (`$PROJECT_DIR$`) on load, in
+     file patterns and directories alike.
+   - The builder reads the XML by hand, so the format now has two readers.
+     `SettingsReadByTheBuildTest` serializes the IDE's store and checks the builder reads the
+     same values, and that both sides have the same defaults.
+   - Until step 3 the spike builder's warning also shows each grammar's package and output
+     directory, to check the settings in a sandbox build.
 3. **The builder**: generate, register outputs, mark generated sources dirty, report messages.
 4. **Conditions and warnings** (decision 5, version drift).
 5. README, `<change-notes>`, ARCHITECTURE.md; move this doc's decisions to DECISIONS.md.

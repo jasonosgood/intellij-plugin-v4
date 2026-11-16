@@ -1,5 +1,6 @@
 package org.antlr.intellij.plugin.jps;
 
+import org.antlr.intellij.plugin.generation.GenerationSettings;
 import org.jetbrains.jps.ModuleChunk;
 import org.jetbrains.jps.builders.DirtyFilesHolder;
 import org.jetbrains.jps.builders.java.JavaSourceRootDescriptor;
@@ -10,6 +11,7 @@ import org.jetbrains.jps.incremental.ModuleLevelBuilder;
 import org.jetbrains.jps.incremental.messages.BuildMessage;
 import org.jetbrains.jps.incremental.messages.CompilerMessage;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,9 +39,13 @@ public class AntlrSourceGeneratorBuilder extends ModuleLevelBuilder {
 						  DirtyFilesHolder<JavaSourceRootDescriptor, ModuleBuildTarget> dirtyFilesHolder,
 						  OutputConsumer outputConsumer) throws IOException
 	{
+		AntlrProjectSettings projectSettings = AntlrProjectSettings.of(context.getProjectDescriptor().getProject());
 		List<String> grammars = new ArrayList<>();
 		dirtyFilesHolder.processDirtyFiles((target, file, root) -> {
-			if ( file.getName().endsWith(GRAMMAR_SUFFIX) ) grammars.add(file.getPath());
+			if ( file.getName().endsWith(GRAMMAR_SUFFIX) ) {
+				GenerationSettings settings = projectSettings.settingsFor(file.getPath().replace(File.separatorChar, '/'));
+				grammars.add(file.getPath()+" (package '"+settings.pkg+"', output '"+settings.outputDir+"')");
+			}
 			return true;
 		});
 		if ( grammars.isEmpty() ) return ExitCode.NOTHING_DONE;

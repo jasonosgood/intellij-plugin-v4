@@ -5,6 +5,9 @@ package org.antlr.intellij.plugin.generation;
  * stores, without the IDE classes that persist it. Empty or null means "not set".
  */
 public final class GenerationSettings {
+	/** What a grammar gets when its project stores nothing for it: the listener and the visitor. */
+	public static final GenerationSettings DEFAULTS = new GenerationSettings("", "", "", "", "", true, true);
+
 	public final String outputDir;
 	public final String libDir;
 	public final String encoding;
