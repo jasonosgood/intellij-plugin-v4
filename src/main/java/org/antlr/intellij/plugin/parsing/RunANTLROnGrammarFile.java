@@ -28,6 +28,9 @@ import org.antlr.intellij.plugin.generation.GrammarHeader;
 import org.antlr.intellij.plugin.generation.GrammarPlace;
 import org.antlr.intellij.plugin.generation.ToolMessage;
 import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
+import org.antlr.intellij.plugin.ANTLRv4FileRoot;
+import org.antlr.intellij.plugin.psi.MyPsiUtils;
+import com.intellij.openapi.util.text.StringUtil;
 import org.antlr.intellij.plugin.psi.AtAction;
 import org.antlr.intellij.plugin.psi.GrammarSpecNode;
 import org.antlr.v4.runtime.misc.Utils;
@@ -107,6 +110,22 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 	/** The ANTLR tool's options for {@code vfile}, from its settings; without the grammar itself. */
 	public static List<String> getANTLRArgsAsList(Project project, VirtualFile vfile) {
 		return generationArgs(project, vfile).asList();
+	}
+
+	/** The stray {@code .tokens} file the grammar's {@code tokenVocab} would be read from, or
+	 *  null ({@link AntlrGenerator#strayTokensFile(String, String, String)}). Reads the
+	 *  {@code tokenVocab} option from the grammar as the editor has it. */
+	@Nullable
+	public static File strayTokensFile(Project project, VirtualFile vfile) {
+		String vocab = ReadAction.computeBlocking(() -> {
+			PsiFile file = PsiManager.getInstance(project).findFile(vfile);
+			if ( !(file instanceof ANTLRv4FileRoot root) ) return null;
+			String name = MyPsiUtils.findTokenVocabIfAny(root);
+			return name==null ? null : StringUtil.unquoteString(name, '\'');
+		});
+		if ( vocab==null ) return null;
+		GenerationArgs args = generationArgs(project, vfile);
+		return AntlrGenerator.strayTokensFile(vocab, args.asMap().get("-lib"), args.outputDir());
 	}
 
 	/** Hands the generation core the grammar's settings and what only the IDE knows about its

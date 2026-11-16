@@ -27,10 +27,7 @@ saves all documents first, as Build and Run do. Code generation belongs to the b
 ### A. Save behavior: done
 DONE.md items 43–47; the rule is in [DECISIONS.md](DECISIONS.md) ("Saving and code
 generation"). Left open:
-- **Stray `.tokens` beside a grammar.** ANTLR looks for a `tokenVocab` `.tokens` in `-lib`
-  (default: the grammar's directory) before the output directory, so a stray one (from an
-  older plugin or a hand-run `antlr4`) shadows the generated one when Generate runs. Consider
-  a warning from Generate when it finds one.
+- **Stray `.tokens` beside a grammar. Done** (DONE.md item 55).
 
 ### B. Code generation in the build (larger; after A)
 Prior art: the build generates. Gradle's `antlr` plugin (`generateGrammarSource`, before
@@ -42,6 +39,10 @@ plugins for real builds.
 1. **Gradle or Maven projects: the build generates. Done** (DONE.md item 54). Not yet checked
    in the sandbox: Generate in a Gradle or Maven module should say "not generated" and offer
    "Generate anyway" (tabled by the owner, 2026-11-16).
+   - **"Don't warn again" on that notification** (owner, 2026-11-16), per project. Prior art:
+     the "Don't offer again" action on `OutputRootOffer`'s notification, stored in
+     `PropertiesComponent`. Decide what Generate does then: generate silently, or still step
+     aside without saying so.
 2. **Plain JPS projects: a JPS source-generator builder. Done** (DONE.md items 48–52; design
    in [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md); the rules in [DECISIONS.md](DECISIONS.md), "Code
    generation in the JPS build"). Build, Rebuild and run configurations generate,

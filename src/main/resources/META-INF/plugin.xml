@@ -97,6 +97,9 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	        errors with a link to the first) instead of the Tool Output window, and no longer says
 	        "generated" when ANTLR reported errors. In a Gradle or Maven module it generates nothing,
 	        since that build generates; "Generate anyway" is offered.</li>
+	    <li>New: when a <code>.tokens</code> file left beside the grammars (by an older version of this
+	        plugin, for example) would be used instead of the generated one, Generate ANTLR Recognizer
+	        offers to delete it, and the build warns.</li>
 	    <li>Fixed: Generate ANTLR Recognizer and Test Rule save all open files first; Generate on an
 	        unsaved grammar generated nothing.</li>
 	    <li>Fixed: the preview refreshes when a grammar it uses changes outside the editor (VCS

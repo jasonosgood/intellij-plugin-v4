@@ -318,6 +318,14 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     says "generated" when ANTLR reported errors, and no longer writes to Tool Output. In a
     Gradle or Maven module (`ExternalBuildOf`, the IDE's side of the builder's `ExternalBuild`)
     it steps aside and offers "Generate anyway". README and change notes updated.
+55. A.: stray `.tokens` warning. ANTLR reads a `tokenVocab` `.tokens` from `-lib` (default: the
+    grammar's directory) before the output directory, so one left there by an older plugin or
+    a hand-run `antlr4` shadows the generated one, with possibly stale token types. The
+    generation core (`AntlrGenerator.strayTokensFile`) warns, on the `tokenVocab` value, when
+    `V.tokens` and its lexer `V.g4` are both in `-lib` and `-lib` isn't the output directory;
+    a `.tokens` without its lexer is a supplied vocabulary and is left alone. The build warns;
+    Generate asks first, before the Gradle/Maven check: Delete Stray File, Continue Anyway or
+    Cancel (owner's call, 2026-11-16).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

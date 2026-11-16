@@ -55,6 +55,59 @@ public class AntlrGeneratorTest {
 		assertFalse("no recognizer from a broken grammar", new File(out, "BrokenParser.java").exists());
 	}
 
+	private static final String LEXER = "lexer grammar L;\nA : 'a' ;\nB : 'b' ;\n";
+	private static final String PARSER = "parser grammar P;\noptions { tokenVocab=L; }\ns : A B ;\n";
+
+	/** A .tokens file beside its lexer grammar is output of an earlier run, and ANTLR reads it
+	 *  (from -lib) instead of the one it generates now. */
+	@Test
+	public void warnsAboutAStrayTokensFile() throws Exception {
+		File lexer = grammar("L.g4", LEXER);
+		File parser = grammar("P.g4", PARSER);
+		grammar("L.tokens", "A=1\n");
+		File out = temp.newFolder("out");
+
+		AntlrGenerator.Result result = AntlrGenerator.run(Arrays.asList(
+			"-o", out.getPath(), "-lib", temp.getRoot().getPath(), lexer.getPath(), parser.getPath()));
+
+		// Ours, then the hazard itself: ANTLR read the stale file, which lacks B.
+		assertEquals(result.messages.toString(), 2, result.messages.size());
+		ToolMessage warning = result.messages.get(0);
+		assertEquals(ToolMessage.Kind.WARNING, warning.kind);
+		assertEquals(parser.getPath(), warning.file);
+		assertEquals(2, warning.line);
+		assertEquals(21, warning.column);
+		assertTrue(warning.summary, warning.summary.contains("L.tokens"));
+		assertTrue(result.messages.get(1).text, result.messages.get(1).text.contains("implicit definition of token B"));
+		assertFalse(result.hasErrors());
+	}
+
+	/** A .tokens file without its lexer grammar is a vocabulary supplied on purpose. */
+	@Test
+	public void suppliedTokensFileIsNotStray() throws Exception {
+		File parser = grammar("P.g4", PARSER);
+		grammar("L.tokens", "A=1\nB=2\n");
+		File out = temp.newFolder("out");
+
+		AntlrGenerator.Result result = AntlrGenerator.run(Arrays.asList(
+			"-o", out.getPath(), "-lib", temp.getRoot().getPath(), parser.getPath()));
+
+		assertEquals(Collections.emptyList(), result.messages);
+	}
+
+	/** Generating beside the grammars: the .tokens file there is the generated one. */
+	@Test
+	public void tokensFileInTheOutputDirectoryIsNotStray() throws Exception {
+		File lexer = grammar("L.g4", LEXER);
+		File parser = grammar("P.g4", PARSER);
+		String dir = temp.getRoot().getPath();
+
+		AntlrGenerator.Result first = AntlrGenerator.run(Arrays.asList("-o", dir, "-lib", dir, lexer.getPath(), parser.getPath()));
+		assertEquals(Collections.emptyList(), first.messages);
+		AntlrGenerator.Result again = AntlrGenerator.run(Arrays.asList("-o", dir, "-lib", dir, lexer.getPath(), parser.getPath()));
+		assertEquals(Collections.emptyList(), again.messages);
+	}
+
 	private File grammar(String name, String text) throws Exception {
 		File file = new File(temp.getRoot(), name);
 		Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8));

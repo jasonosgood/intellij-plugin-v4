@@ -9,6 +9,7 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.module.Module;
@@ -16,6 +17,9 @@ import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.MessageDialogBuilder;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.antlr.intellij.plugin.format.GrammarFormattingService;
@@ -25,6 +29,7 @@ import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Collections;
 
 /** Generate parser from ANTLR grammar, for one-offs: builds generate on their own (doc/DECISIONS.md,
@@ -55,6 +60,8 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 		LOG.debug("actionPerformed "+(grammarFile==null ? "NONE" : grammarFile));
 		if ( grammarFile==null ) return;
 
+		if ( !resolveStrayTokensFile(project, grammarFile) ) return;
+
 		String buildTool = ReadAction.computeBlocking(() -> {
 			Module module = ModuleUtilCore.findModuleForFile(grammarFile, project);
 			return module==null ? null : ExternalBuildOf.module(module);
@@ -64,6 +71,40 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 			return;
 		}
 		generate(project, grammarFile);
+	}
+
+	/**
+	 * Asks what to do with a stray {@code .tokens} file the grammar's {@code tokenVocab} would be
+	 * read from instead of the generated one (doc/DECISIONS.md). Asked first: it matters to any
+	 * generation, here or in the build. The build can't ask, so it warns.
+	 * @return false to stop: the user cancelled, or the file couldn't be deleted
+	 */
+	private static boolean resolveStrayTokensFile(Project project, VirtualFile grammarFile) {
+		File stray = RunANTLROnGrammarFile.strayTokensFile(project, grammarFile);
+		if ( stray==null ) return true;
+		int answer = MessageDialogBuilder.yesNoCancel("Stray Tokens File",
+				"<html>"+StringUtil.escapeXmlEntities(stray.getPath())+" is next to its lexer grammar, "+
+				"left there by an earlier run. ANTLR reads it instead of the one it generates, so "+
+				grammarFile.getName()+" would get its token types, which may be out of date.</html>")
+			.yesText("Delete Stray File")
+			.noText("Continue Anyway")
+			.cancelText("Cancel")
+			.asWarning()
+			.show(project);
+		if ( answer==Messages.CANCEL ) return false;
+		if ( answer==Messages.NO ) return true;
+		VirtualFile file = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(stray);
+		if ( file==null ) return true; // gone already
+		try {
+			WriteAction.run(() -> file.delete(GenerateParserAction.class));
+			return true;
+		}
+		catch (IOException ex) {
+			Notifications.Bus.notify(new Notification(GrammarFormattingService.NOTIFICATION_GROUP,
+				"Couldn't delete "+stray.getName(), StringUtil.escapeXmlEntities(ex.toString()),
+				NotificationType.ERROR), project);
+			return false;
+		}
 	}
 
 	/** The module's own build generates: say so instead of writing a second copy. Prior art: the
