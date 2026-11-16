@@ -82,6 +82,17 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	    <li>New: the "Grammar lint (antlr4-xl)" inspection finds unused rules, duplicate alternatives,
 	        unnecessary parentheses and more, with quick fixes and "fix all in file".</li>
 	    <li>New: renaming the preview's start rule keeps it as the start rule (after saving the grammar).</li>
+	    <li>Changed: switching editor tabs no longer saves the grammar; the preview follows your saves
+	        (Save All, or the IDE's autosave). To see unsaved files, turn on Settings &gt; Editor &gt;
+	        General &gt; Editor Tabs &gt; Mark modified (*).</li>
+	    <li>Changed: saving a grammar no longer runs the ANTLR tool or writes <code>.tokens</code> files.
+	        Generated code comes from Generate ANTLR Recognizer or your build.</li>
+	    <li>Fixed: Generate ANTLR Recognizer and Test Rule save all open files first; Generate on an
+	        unsaved grammar generated nothing.</li>
+	    <li>Fixed: the preview refreshes when a grammar it uses changes outside the editor (VCS
+	        checkout, another editor), or is created, deleted, moved or renamed.</li>
+	    <li>Fixed: implicit-token warnings in a parser grammar with <code>tokenVocab</code> follow the
+	        lexer grammar as edited, not a possibly stale generated <code>.tokens</code> file.</li>
 	    <li>Fixed: deleting the preview's start rule now falls back to the first rule instead of none.</li>
 	    <li>Fixed: lexer alternatives made only of commands (<code>X : -&gt; skip ;</code>) were reported as syntax errors.</li>
 	    <li>Fixed: with several projects open, saving a grammar in one could refresh another's preview.</li>

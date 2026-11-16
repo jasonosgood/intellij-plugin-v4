@@ -213,6 +213,29 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertFalse(preview.hasPreviewState(lexer));
 	}
 
+	/** A save writes nothing: no generated code or {@code .tokens} file, even for a lexer whose
+	 *  parser is previewed. Code generation belongs to Generate and the build. Replaces
+	 *  {@code Issue540Test} (upstream issue #540: {@code .tokens} rewritten too often), which
+	 *  pinned the old write-on-save. */
+	public void testSavingTheLexerWritesNoFiles() {
+		select(parser);
+		editAndSave(lexer, text -> text + "\nTILDE : '~';\n");
+		assertTrue(preview.getPreviewState(parser).lexerGrammar().tokenNameToTypeMap.containsKey("TILDE"));
+		assertNull(generated("SemanticVersionLexer.tokens"));
+		assertNull(generated("SemanticVersionLexer.java"));
+	}
+
+	/** Deleting a lexer the previewed parser uses reloads the parser, which then has no lexer. */
+	public void testDeletingTheLexerReloadsTheParser() throws Exception {
+		select(parser);
+		String lexerPath = lexer.getPath();
+		WriteAction.runAndWait(() -> lexer.delete(this));
+		preview.grammarFilesRemoved(List.of(lexerPath));
+		waitForGrammarLoads();
+		LexerGrammar missing = preview.getPreviewState(parser).lexerGrammar();
+		assertTrue(missing==null || !"SemanticVersionLexer".equals(missing.name));
+	}
+
 	/** Test Rule saves all documents first, as Run does, so an unsaved lexer edit isn't left behind. */
 	public void testTestRuleSavesAllDocuments() {
 		select(lexer);

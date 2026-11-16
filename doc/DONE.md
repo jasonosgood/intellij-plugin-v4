@@ -262,6 +262,29 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     itself only reloads the grammars using it. Prior art: VFS listeners see every change,
     whatever caused it. Test: `PreviewPanelTest.testChangingAClosedLexerOnDiskReloadsTheParser`
     (fails with the old open-files filter).
+46. Saving A.4: saves write nothing. `PreviewService.grammarSaved` no longer runs
+    `RunANTLROnGrammarFile`, which regenerated a lexer's Java and `.tokens` into `gen/` (or,
+    with auto-generate off, wrote the vocabulary next to the grammar) whenever a lexer a
+    previewed parser used changed, as a modal task. `RunANTLROnGrammarFile` now only serves
+    Generate: its `forceGeneration` flag, staleness check and vocabulary-only branch are gone.
+    - The editor's checks (`GrammarIssuesCollector`) read a `tokenVocab` lexer's tokens from
+      the lexer grammar as the editor shows it, saved or not (captured in `snapshot` through
+      PSI, `importVocab` in memory), as the preview does, instead of the `.tokens` file in
+      `-lib` or `gen/`. A `.tokens` from elsewhere, via `-lib`, is still read when there is no
+      lexer grammar beside the parser. Test: `validation/TokenVocabIssuesTest` (all three
+      failed before: with no `.tokens` on disk, the lexer's tokens were reported as implicit).
+    - The preview also reloads when a grammar it uses is deleted, moved or renamed
+      (`grammarFilesRemoved`; `GrammarFileListener` maps the VFS events). Tests:
+      `PreviewPanelTest.testSavingTheLexerWritesNoFiles`, `testDeletingTheLexerReloadsTheParser`.
+    - `Issue540Test` deleted: it pinned the write-on-save (and wrote into
+      `src/test/resources/gen/`); `testSavingTheLexerWritesNoFiles` replaces it.
+    - Rule: a `.tokens` file is generated output, written only into the generated sources
+      directory by Generate or the build. Prior art: ANTLR writes it beside the recognizer;
+      the Gradle and Maven ANTLR plugins put it in their generated-sources directory.
+    - plugin.xml change notes cover A.1–A.4.
+    - Known regression, fixed with B (IN_PROGRESS.md, B.5): with no generated `.tokens`, the
+      parser's editor reports "cannot find tokens file" on its `tokenVocab` option.
+    - Checked by the owner in the sandbox.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

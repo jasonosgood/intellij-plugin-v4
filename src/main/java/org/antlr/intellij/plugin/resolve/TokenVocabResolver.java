@@ -76,7 +76,7 @@ public class TokenVocabResolver {
 	/**
 	 * Looks for an ANTLR grammar file named {@code <baseName>}.g4 next to the given {@code sibling} file.
 	 */
-	static PsiFile findRelativeFile(String baseName, PsiFile sibling) {
+	public static PsiFile findRelativeFile(String baseName, PsiFile sibling) {
 		PsiDirectory parentDirectory = sibling.getParent();
 
 		if (parentDirectory != null) {

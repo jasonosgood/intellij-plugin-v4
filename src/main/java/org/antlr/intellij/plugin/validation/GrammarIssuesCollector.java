@@ -4,7 +4,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
+import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
+import org.antlr.intellij.plugin.psi.MyPsiUtils;
+import org.antlr.intellij.plugin.resolve.TokenVocabResolver;
 import org.antlr.runtime.ANTLRReaderStream;
 import org.antlr.runtime.Token;
 import org.antlr.v4.Tool;
@@ -16,6 +19,7 @@ import org.antlr.v4.tool.*;
 import org.antlr.v4.tool.ast.GrammarAST;
 import org.antlr.v4.tool.ast.GrammarRootAST;
 import org.antlr.v4.tool.ast.RuleRefAST;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.Nullable;
 import org.stringtemplate.v4.ST;
 
@@ -41,13 +45,20 @@ public class GrammarIssuesCollector {
         final List<String> args;
         /** null when the user's ANTLR args already specify -lib */
         @Nullable final String libDirectory;
+        /** The {@code tokenVocab} lexer grammar next to this one, as the editor shows it (saved
+         *  or not); null if there's no {@code tokenVocab} or no such grammar. */
+        @Nullable final String vocabPath;
+        @Nullable final String vocabText;
 
-        Input(String path, String name, String text, List<String> args, @Nullable String libDirectory) {
+        Input(String path, String name, String text, List<String> args, @Nullable String libDirectory,
+              @Nullable String vocabPath, @Nullable String vocabText) {
             this.path = path;
             this.name = name;
             this.text = text;
             this.args = args;
             this.libDirectory = libDirectory;
+            this.vocabPath = vocabPath;
+            this.vocabText = vocabText;
         }
     }
 
@@ -67,7 +78,19 @@ public class GrammarIssuesCollector {
             // Use the directory's real path; PsiDirectory.toString() is "PsiDirectory:<path>", not a path.
             libDirectory = dir != null ? dir.getVirtualFile().getPath() : null;
         }
-        return new Input(vfile.getPath(), file.getName(), file.getText(), args, libDirectory);
+        PsiFile vocab = tokenVocabGrammar(file);
+        VirtualFile vocabFile = vocab==null ? null : vocab.getVirtualFile();
+        return new Input(vfile.getPath(), file.getName(), file.getText(), args, libDirectory,
+                         vocabFile==null ? null : vocabFile.getPath(), vocabFile==null ? null : vocab.getText());
+    }
+
+    /** The grammar named by {@code file}'s {@code tokenVocab} option, next to it, or null. */
+    @Nullable
+    private static PsiFile tokenVocabGrammar(PsiFile file) {
+        if ( !(file instanceof ANTLRv4FileRoot root) ) return null;
+        String vocabName = MyPsiUtils.findTokenVocabIfAny(root);
+        if ( vocabName==null ) return null;
+        return TokenVocabResolver.findRelativeFile(StringUtils.strip(vocabName, "'"), file);
     }
 
     /** Runs the ANTLR tool on a snapshot; touches no PSI, so call it without a read lock. */
@@ -116,7 +139,15 @@ public class GrammarIssuesCollector {
             String vocabName = g.getOptionString("tokenVocab");
             if ( vocabName!=null ) { // import vocab to avoid spurious warnings
                 LOG.debug("token vocab file "+vocabName);
-                g.importTokensFromTokensFile();
+                Grammar vocab = input.vocabPath==null || input.vocabText==null ? null
+                    : loadVocabGrammar(input.vocabPath, input.vocabText, input.libDirectory, args);
+                if ( vocab!=null ) {
+                    g.importVocab(vocab);
+                }
+                else {
+                    // no lexer grammar beside this one: a .tokens file from elsewhere, via -lib
+                    g.importTokensFromTokensFile();
+                }
             }
 
             antlr.process(g, false);
@@ -138,6 +169,35 @@ public class GrammarIssuesCollector {
             LOG.error("antlr can't process "+input.name, e);
         }
         return listener.getIssues();
+    }
+
+    /** Loads the {@code tokenVocab} lexer from its text, for its tokens only: its own problems
+     *  are reported in its own editor. Prior art: the preview imports the lexer's vocabulary the
+     *  same way ({@code ParsingUtils.loadGrammars}), with no generated {@code .tokens} file.
+     */
+    @Nullable
+    private static Grammar loadVocabGrammar(String vocabPath, String vocabText, @Nullable String libDirectory,
+                                            List<String> args) {
+        Tool antlr = new Tool(args.toArray(new String[0]));
+        if ( libDirectory!=null ) {
+            antlr.libDirectory = libDirectory;
+        }
+        antlr.removeListeners();
+        antlr.addListener(new GrammarIssuesCollectorToolListener()); // discarded
+        try {
+            ANTLRReaderStream in = new ANTLRReaderStream(new StringReader(vocabText));
+            in.name = new File(vocabPath).getName();
+            GrammarRootAST ast = antlr.parse(in.name, in);
+            if ( ast==null || ast.hasErrors ) return null;
+            Grammar vocab = antlr.createGrammar(ast);
+            vocab.fileName = vocabPath;
+            antlr.process(vocab, false);
+            return vocab;
+        }
+        catch (Exception e) {
+            LOG.debug("can't load token vocab "+vocabPath, e);
+            return null;
+        }
     }
 
     @Nullable

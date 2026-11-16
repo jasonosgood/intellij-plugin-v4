@@ -30,9 +30,7 @@ import org.antlr.intellij.plugin.parser.ANTLRv4Parser;
 import org.antlr.intellij.plugin.psi.AtAction;
 import org.antlr.intellij.plugin.psi.GrammarSpecNode;
 import org.antlr.v4.Tool;
-import org.antlr.v4.codegen.CodeGenerator;
 import org.antlr.v4.runtime.misc.Utils;
-import org.antlr.v4.tool.Grammar;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.stringtemplate.v4.misc.Misc;
@@ -60,68 +58,25 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 	private final VirtualFile grammarFile;
 	private final Project project;
-	private final boolean forceGeneration;
 
+	/** Generates the recognizer for {@code grammarFile} into its output directory. Run only on
+	 *  the user's request (Generate ANTLR Recognizer), never on a save: code generation belongs
+	 *  to the user or the build (doc/IN_PROGRESS.md, "Saving and code generation").
+	 */
 	public RunANTLROnGrammarFile(VirtualFile grammarFile,
 								 @Nullable final Project project,
 								 @NotNull final String title,
-								 final boolean canBeCancelled,
-								 boolean forceGeneration)
+								 final boolean canBeCancelled)
 	{
 		super(project, title, canBeCancelled);
 		this.grammarFile = grammarFile;
 		this.project = project;
-		this.forceGeneration = forceGeneration;
 	}
 
 	@Override
 	public void run(@NotNull ProgressIndicator indicator) {
 		indicator.setIndeterminate(true);
-		ANTLRv4GrammarProperties grammarProperties = getGrammarProperties(project, grammarFile);
-		boolean autogen = grammarProperties.shouldAutoGenerateParser();
-		if ( forceGeneration || (autogen && isGrammarStale(grammarProperties)) ) {
-			ReadAction.runBlocking(() -> antlr(grammarFile));
-		}
-		else {
-			GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
-			// is lexer file? gen .tokens file no matter what as tokens might have changed;
-			// a parser that feeds off of that file will need to see the changes.
-			if ( loaded!=null && loaded.parser()==null && loaded.lexer()!=null) {
-				Grammar g = loaded.lexer();
-				String language = g.getOptionString(ANTLRv4GrammarProperties.PROP_LANGUAGE);
-				Tool tool = ParsingUtils.createANTLRToolForLoadingGrammars(getGrammarProperties(project, grammarFile));
-				CodeGenerator gen = CodeGenerator.create(tool, g, language);
-				gen.writeVocabFile();
-			}
-		}
-	}
-
-	// TODO: lots of duplication with antlr() function.
-	private boolean isGrammarStale(ANTLRv4GrammarProperties grammarProperties) {
-		String sourcePath = grammarProperties.resolveLibDir(project, getParentDir(grammarFile));
-		String fullyQualifiedInputFileName = sourcePath+File.separator+grammarFile.getName();
-
-		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
-		// The grammar should be loaded into the cache before calling this function
-		Grammar g = loaded==null ? null : loaded.parser()!=null ? loaded.parser() : loaded.lexer();
-		if ( g==null ) {
-			return false;
-		}
-
-		String language = g.getOptionString(ANTLRv4GrammarProperties.PROP_LANGUAGE);
-		CodeGenerator generator = CodeGenerator.create(null, g, language);
-		String recognizerFileName = generator.getRecognizerFileName();
-
-		VirtualFile contentRoot = getContentRoot(project, grammarFile);
-		String package_ = grammarProperties.getPackage();
-		String outputDirName = grammarProperties.resolveOutputDirName(project, contentRoot, package_);
-		String fullyQualifiedOutputFileName = outputDirName+File.separator+recognizerFileName;
-
-		File inF = new File(fullyQualifiedInputFileName);
-		File outF = new File(fullyQualifiedOutputFileName);
-		boolean stale = inF.lastModified()>outF.lastModified();
-		LOG.debug((!stale ? "not" : "") + "stale: " + fullyQualifiedInputFileName + " -> " + fullyQualifiedOutputFileName);
-		return stale;
+		ReadAction.runBlocking(() -> antlr(grammarFile));
 	}
 
 	/** Run ANTLR tool on file according to preferences in intellij for this file.

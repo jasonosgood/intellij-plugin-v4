@@ -28,16 +28,14 @@ saves all documents first, as Build and Run do. Code generation belongs to the b
 1. Done: switching tabs no longer saves (DONE.md, item 43).
 2. Done: Generate and Test Rule save all documents first (DONE.md, item 44).
 3. Done: the preview reloads on changes to any grammar it uses, open or not (DONE.md, item 45).
-4. **No `.tokens` files written on save.** Saving a lexer that a previewed grammar uses runs
-   `RunANTLROnGrammarFile` (from `PreviewService.grammarSaved`), which writes the lexer's
-   `.tokens` file into the project. That is preview plumbing; check whether `GrammarCache` can
-   hand the lexer's vocabulary to the parser in memory. Then also reload on deleting or moving
-   a grammar the preview uses (`GrammarSaveListener` skips `VFileDeleteEvent` and
-   `VFileMoveEvent` for now, since the save path would run the tool on a file that's gone).
-5. **Remove the per-grammar `autoGen` setting** ("Auto-generate parsers upon save"). It is on
-   by default, yet saving a combined or parser grammar never generated (same on upstream
-   `master`): only a lexer saved while its parser was previewed ran the tool. Generate-on-save
-   comes from the build instead (B.2).
+4. Done: saves write nothing; the editor's checks read a `tokenVocab` lexer's tokens from the
+   lexer grammar (DONE.md, item 46). Open: ANTLR looks for a `tokenVocab` `.tokens` in `-lib`
+   (default: the grammar's directory) before the output directory, so a stray `.tokens` beside
+   a grammar (from an older plugin or a hand-run `antlr4`) shadows the generated one when
+   Generate runs. Consider a warning from Generate when it finds one.
+5. **Remove the per-grammar `autoGen` setting** ("Auto-generate parsers upon save"). Since
+   A.4 it does nothing at all (before, only a lexer saved while its parser was previewed ran
+   the tool). Generate-on-save comes from the build instead (B.2).
 6. Record the principle in [DECISIONS.md](DECISIONS.md) with its prior art.
 
 ### B. Code generation in the build (larger; after A)
@@ -61,6 +59,16 @@ plugins for real builds.
 3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification (see "Remove
    the Tool Output tool window" below).
 4. Optionally, the README points to the Gradle and Maven plugins for real builds.
+5. **Known regression from A.4: "cannot find tokens file" in a `tokenVocab` parser.** With no
+   generated `.tokens` (e.g. `gen/` deleted), the parser's editor shows `error(114):
+   SemanticVersionParser.g4:7:17: cannot find tokens file …/SemanticVersionLexer.tokens` on the
+   `tokenVocab` option (seen in the sandbox on grammars-v4 `semver`). Cause:
+   `GrammarIssuesCollector` imports the lexer's tokens in memory, but ANTLR's `process()` still
+   looks for the file and reports `CANNOT_FIND_TOKENS_FILE_REFD_IN_GRAMMAR`. Before A.4, a save
+   regenerated the file, which hid this. Likely fix: when the vocabulary came from the lexer
+   grammar, ignore that error, as the preview's `PluginIgnoreMissingTokensFileErrorManager`
+   does; then assert in `TokenVocabIssuesTest` that no issue is reported at all, not only no
+   implicit tokens. Owner's call (2026-11-16): fix together with B.
 
 ## When touching the code anyway
 Not on their own:
@@ -81,9 +89,8 @@ Not on their own:
   Code reports in a notification balloon; build-integrated generators (Gradle `antlr`, Maven
   `antlr4`, protobuf) report in the Build tool window. Likely: a notification (success, or
   errors with a link to the grammar), and nothing else. `ToolOutput` is then deleted.
-  Note: `GenerateParserAction` runs the tool as a background task, then refreshes the output
-  directory and says "generated" right away, before the task finishes (and even if it fails).
-  The refresh and the notification belong in the task's `onSuccess` / `onThrowable`.
+  Note: `GenerateParserAction` says "parser for X generated" even when the tool reported
+  errors. (`RunANTLROnGrammarFile` is a `Task.Modal`, so it does finish first.)
 - **Profile only when the Profiler tab is shown.** Parsing a one-line query on
   `oracle_normal.g4` takes ~330 ms, because the preview parses with exact ambiguity detection
   and profiling on (found in greenfield step 1).

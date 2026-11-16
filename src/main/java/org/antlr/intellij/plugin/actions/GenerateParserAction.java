@@ -50,13 +50,11 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 		boolean canBeCancelled = true;
 		MyActionUtils.saveAllBeforeRunning(project);
 
-		boolean forceGeneration = true; // from action, they really mean it
 		RunANTLROnGrammarFile gen =
 			new RunANTLROnGrammarFile(grammarFile,
 									  project,
 									  title,
-									  canBeCancelled,
-									  forceGeneration);
+									  canBeCancelled);
 		ProgressManager.getInstance().run(gen);
 
 		// refresh from disk to see new files

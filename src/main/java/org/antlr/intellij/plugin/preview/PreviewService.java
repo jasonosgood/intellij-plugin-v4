@@ -8,7 +8,9 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent;
-import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent;
+import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent;
+import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.CheckedDisposable;
 import com.intellij.openapi.util.Disposer;
@@ -21,7 +23,6 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
-import org.antlr.intellij.plugin.parsing.RunANTLROnGrammarFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.concurrency.CancellablePromise;
@@ -83,7 +84,7 @@ public final class PreviewService implements Disposable {
 		this.project = project;
 		// VFS events are application-wide; disconnected when this service is disposed
 		ApplicationManager.getApplication().getMessageBus().connect(this)
-			.subscribe(VirtualFileManager.VFS_CHANGES, new GrammarSaveListener());
+			.subscribe(VirtualFileManager.VFS_CHANGES, new GrammarFileListener());
 	}
 
 	public static PreviewService getInstance(@NotNull Project project) {
@@ -228,17 +229,38 @@ public final class PreviewService implements Disposable {
 				LOG.debug("grammarSaved " + grammarFile.getPath() + " " + project.getName());
 				Map<VirtualFile, GrammarCache.Loaded> loads = new LinkedHashMap<>();
 				if ( previewed ) loads.put(grammarFile, cache.get(grammarFile));
-				if ( !dependents.isEmpty() ) {
-					// a lexer or imported grammar: regenerate its .tokens file for the grammars using it
-					ProgressManager.getInstance().run(
-						new RunANTLROnGrammarFile(grammarFile, project, "ANTLR Code Generation", true, false));
-				}
+				// no code generation here: the preview and the editor's checks read a lexer's
+				// tokens from the lexer grammar itself, so a save writes nothing
 				for (VirtualFile f : dependents) {
 					loads.put(f, cache.get(f));
 				}
 				return loads;
 			},
 			() -> publisher().grammarReloaded(grammarFile));
+	}
+
+	/** Grammar files were deleted, moved or renamed away from {@code paths}: reloads the
+	 *  previewed grammars that read them (a {@code tokenVocab} lexer, imports). A previewed
+	 *  grammar that is itself deleted closes with its tab.
+	 */
+	public void grammarFilesRemoved(@NotNull Collection<String> paths) {
+		List<VirtualFile> reloaded = new ArrayList<>();
+		runGrammarLoad(
+			() -> {
+				GrammarCache cache = GrammarCache.getInstance(project);
+				Map<VirtualFile, GrammarCache.Loaded> loads = new LinkedHashMap<>();
+				for (VirtualFile f : previewStates.keySet()) {
+					GrammarCache.Loaded loaded = cache.peek(f);
+					if ( f.isValid() && loaded!=null && paths.stream().anyMatch(loaded.inputs()::containsKey) && cache.isStale(f) ) {
+						loads.put(f, cache.get(f));
+					}
+				}
+				if ( loads.isEmpty() ) return null;
+				LOG.debug("grammarFilesRemoved " + paths + ": reloading " + loads.keySet() + " " + project.getName());
+				reloaded.addAll(loads.keySet());
+				return loads;
+			},
+			() -> reloaded.forEach(f -> publisher().grammarReloaded(f)));
 	}
 
 	/** Run {@code load} on the grammar loader thread; unless it returns null, put the grammars
@@ -326,20 +348,41 @@ public final class PreviewService implements Disposable {
 
 	// ------------------------------
 
-	private class GrammarSaveListener implements BulkFileListener {
+	/** Turns VFS events for grammar files into {@link #grammarFilesChanged} and
+	 *  {@link #grammarFilesRemoved}. A move or rename is both: away from the old path, to the
+	 *  new one (where a grammar may have looked for an absent lexer).
+	 */
+	private class GrammarFileListener implements BulkFileListener {
 		@Override
 		public void after(@NotNull List<? extends VFileEvent> events) {
 			if ( ApplicationManager.getApplication().isUnitTestMode() ) return;
 			List<VirtualFile> changed = new ArrayList<>();
+			List<String> removed = new ArrayList<>();
 			for (VFileEvent event : events) {
-				// content changes and creations (a lexer looked for but absent is an input too);
-				// deletions and moves wait until a save no longer runs the ANTLR tool on the file
-				if ( !(event instanceof VFileContentChangeEvent || event instanceof VFileCreateEvent) ) continue;
-				VirtualFile vfile = event.getFile();
-				if ( vfile!=null && vfile.getName().endsWith(".g4") ) changed.add(vfile);
+				if ( event instanceof VFileContentChangeEvent || event instanceof VFileCreateEvent ) {
+					VirtualFile vfile = event.getFile();
+					if ( vfile!=null && isGrammar(vfile.getName()) ) changed.add(vfile);
+				}
+				else if ( event instanceof VFileDeleteEvent && isGrammar(event.getPath()) ) {
+					removed.add(event.getPath());
+				}
+				else if ( event instanceof VFileMoveEvent move && isGrammar(move.getOldPath()) ) {
+					removed.add(move.getOldPath());
+					changed.add(move.getFile());
+				}
+				else if ( event instanceof VFilePropertyChangeEvent rename && rename.isRename()
+						  && (isGrammar(rename.getOldPath()) || isGrammar(rename.getNewPath())) ) {
+					removed.add(rename.getOldPath());
+					changed.add(rename.getFile());
+				}
 			}
-			// VFS events are application-wide; grammarFilesChanged ignores other projects' grammars
+			// VFS events are application-wide; both calls ignore other projects' grammars
+			if ( !removed.isEmpty() ) grammarFilesRemoved(removed);
 			if ( !changed.isEmpty() ) grammarFilesChanged(changed);
+		}
+
+		private static boolean isGrammar(String nameOrPath) {
+			return nameOrPath.endsWith(".g4");
 		}
 	}
 }
