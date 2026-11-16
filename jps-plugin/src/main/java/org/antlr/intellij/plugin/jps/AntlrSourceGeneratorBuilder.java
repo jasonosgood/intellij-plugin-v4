@@ -2,6 +2,7 @@ package org.antlr.intellij.plugin.jps;
 
 import com.intellij.openapi.util.io.FileUtil;
 import org.antlr.intellij.plugin.generation.AntlrGenerator;
+import org.antlr.intellij.plugin.generation.BuildMessages;
 import org.antlr.intellij.plugin.generation.GenerationArgs;
 import org.antlr.intellij.plugin.generation.GenerationSettings;
 import org.antlr.intellij.plugin.generation.GrammarHeader;
@@ -20,13 +21,22 @@ import org.jetbrains.jps.incremental.ProjectBuildException;
 import org.jetbrains.jps.incremental.fs.CompilationRound;
 import org.jetbrains.jps.incremental.messages.BuildMessage;
 import org.jetbrains.jps.incremental.messages.CompilerMessage;
+import org.jetbrains.jps.incremental.messages.CustomBuilderMessage;
 import org.jetbrains.jps.incremental.messages.ProgressMessage;
 import org.jetbrains.jps.indices.ModuleExcludeIndex;
+import org.jetbrains.jps.model.java.JavaSourceRootType;
 import org.jetbrains.jps.model.module.JpsModule;
+import org.jetbrains.jps.model.module.JpsModuleSourceRoot;
 import org.jetbrains.jps.util.JpsPathUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -47,6 +57,8 @@ import java.util.TreeMap;
  *     the grammar changes or goes away, and generated Java is handed to the compiler in the
  *     same build.</li>
  * <li>Arguments come from the generation core, which the Generate action also uses.</li>
+ * <li>It steps aside for a module imported from Gradle or Maven, and for a grammar whose
+ *     output directory isn't a source root of its module; it says so once per change.</li>
  * </ul>
  * Holds no state: JPS may build modules in parallel.
  * <p>
@@ -95,18 +107,55 @@ public class AntlrSourceGeneratorBuilder extends ModuleLevelBuilder {
 	{
 		List<GrammarFile> grammars = grammarsOf(context, target);
 		if ( grammars.isEmpty() ) return ExitCode.NOTHING_DONE; // JPS deletes a removed grammar's outputs itself
-		if ( !needsGeneration(context, target, dirtyFilesHolder, grammars) ) return ExitCode.NOTHING_DONE;
+		boolean changed = grammarsChanged(target, dirtyFilesHolder);
+		if ( !changed && !generatedFileMissing(context, target, grammars) ) return ExitCode.NOTHING_DONE;
 
-		context.processMessage(new ProgressMessage("Generating ANTLR recognizers ["+target.getModule().getName()+"]"));
+		JpsModule module = target.getModule();
+		String externalBuild = ExternalBuild.of(module);
+		if ( externalBuild!=null ) {
+			// Its own build generates (Gradle's antlr plugin, Maven's antlr4 plugin); a second
+			// copy from here would mean duplicate classes.
+			context.processMessage(new CompilerMessage(NAME, BuildMessage.Kind.INFO,
+				"Module '"+module.getName()+"' is imported from "+externalBuild+
+				", whose own build generates ANTLR recognizers; none generated here."));
+			return ExitCode.NOTHING_DONE;
+		}
 
 		// Grammars with the same options go to one run of the tool, which then generates a
-		// lexer before the parsers that use its vocabulary.
+		// lexer before the parsers that use its vocabulary. A grammar whose output directory
+		// isn't a source root of the module is left alone: the compiler wouldn't see its
+		// recognizer, and the user never asked for files there.
 		AntlrProjectSettings projectSettings = AntlrProjectSettings.of(context.getProjectDescriptor().getProject());
 		Map<List<String>, List<GrammarFile>> runs = new LinkedHashMap<>();
+		Map<String, Integer> skipped = new LinkedHashMap<>(); // output root to its number of grammars
 		for (GrammarFile grammar : grammars) {
 			GenerationSettings settings = projectSettings.settingsFor(path(grammar.file));
-			List<String> options = GenerationArgs.of(settings, place(grammar, target.getModule())).asList();
-			runs.computeIfAbsent(options, o -> new ArrayList<>()).add(grammar);
+			GenerationArgs args = GenerationArgs.of(settings, place(grammar, module));
+			if ( isUnderSourceRootOf(module, new File(args.outputDir())) ) {
+				runs.computeIfAbsent(args.asList(), o -> new ArrayList<>()).add(grammar);
+			}
+			else {
+				skipped.merge(path(new File(args.outputRoot())), 1, Integer::sum);
+			}
+		}
+		for (Map.Entry<String, Integer> skip : skipped.entrySet()) {
+			List<String> contentRoots = new ArrayList<>();
+			for (String url : module.getContentRootsList().getUrls()) contentRoots.add(JpsPathUtil.urlToPath(url));
+			context.processMessage(new CompilerMessage(NAME, BuildMessage.Kind.INFO,
+				"No ANTLR recognizers generated for "+skip.getValue()+" grammar(s) of module '"+module.getName()+
+				"': their output directory '"+BuildMessages.displayPath(skip.getKey(), contentRoots)+
+				"' isn't a source root of the module."));
+			// The IDE offers to mark the directory as a generated source root.
+			context.processMessage(new CustomBuilderMessage(BuildMessages.BUILDER_ID, BuildMessages.OUTPUT_NOT_SOURCE_ROOT,
+				BuildMessages.outputNotSourceRoot(module.getName(), skip.getKey())));
+		}
+		if ( runs.isEmpty() ) return ExitCode.NOTHING_DONE;
+
+		context.processMessage(new ProgressMessage("Generating ANTLR recognizers ["+module.getName()+"]"));
+
+		String versionMismatch = RuntimeVersion.mismatch(module, target.isTests());
+		if ( versionMismatch!=null ) {
+			context.processMessage(new CompilerMessage(NAME, BuildMessage.Kind.WARNING, versionMismatch));
 		}
 
 		boolean errors = false;
@@ -130,8 +179,7 @@ public class AntlrSourceGeneratorBuilder extends ModuleLevelBuilder {
 				for (File output : outputs.getValue()) {
 					outputConsumer.registerOutputFile(target, output, source);
 					if ( output.getName().endsWith(JAVA_SUFFIX) ) {
-						// Compiled in this build, if the output directory is a source root.
-						FSOperations.markDirty(context, CompilationRound.CURRENT, output);
+						FSOperations.markDirty(context, CompilationRound.CURRENT, output); // compiled in this build
 					}
 				}
 			}
@@ -140,25 +188,51 @@ public class AntlrSourceGeneratorBuilder extends ModuleLevelBuilder {
 		return errors ? ExitCode.ABORT : ExitCode.OK;
 	}
 
+	/** Asked of the module's model, not of the build's root index: the directory needn't exist yet. */
+	private static boolean isUnderSourceRootOf(JpsModule module, File dir) {
+		for (JpsModuleSourceRoot root : module.getSourceRoots()) {
+			if ( root.getRootType() instanceof JavaSourceRootType && FileUtil.isAncestor(root.getFile(), dir, false) ) return true;
+		}
+		return false;
+	}
+
 	/** Every grammar under the target's source roots, in path order. */
 	private static List<GrammarFile> grammarsOf(CompileContext context, ModuleBuildTarget target) {
 		ModuleExcludeIndex excludes = context.getProjectDescriptor().getModuleExcludeIndex();
 		Map<String, GrammarFile> grammars = new TreeMap<>();
 		for (JavaSourceRootDescriptor root : context.getProjectDescriptor().getBuildRootIndex().getTargetRoots(target, context)) {
-			FileUtil.processFilesRecursively(root.getRootFile(), file -> {
-				if ( file.isFile() && file.getName().endsWith(GRAMMAR_SUFFIX) ) {
-					grammars.putIfAbsent(path(file), new GrammarFile(file, root));
-				}
-				return true;
-			}, dir -> !excludes.isExcluded(dir));
+			if ( !root.getRootFile().isDirectory() ) continue; // a root that doesn't exist yet, like gen/
+			try {
+				Files.walkFileTree(root.getRootFile().toPath(), new SimpleFileVisitor<Path>() {
+					@Override
+					public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attributes) {
+						return excludes.isExcluded(dir.toFile()) ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
+					}
+
+					@Override
+					public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+						if ( attributes.isRegularFile() && file.getFileName().toString().endsWith(GRAMMAR_SUFFIX) ) {
+							grammars.putIfAbsent(path(file.toFile()), new GrammarFile(file.toFile(), root));
+						}
+						return FileVisitResult.CONTINUE;
+					}
+
+					@Override
+					public FileVisitResult visitFileFailed(Path file, IOException e) {
+						return FileVisitResult.CONTINUE; // unreadable: not a grammar we can build
+					}
+				});
+			}
+			catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
 		}
 		return new ArrayList<>(grammars.values());
 	}
 
-	private static boolean needsGeneration(CompileContext context,
-										   ModuleBuildTarget target,
-										   DirtyFilesHolder<JavaSourceRootDescriptor, ModuleBuildTarget> dirtyFilesHolder,
-										   List<GrammarFile> grammars) throws IOException
+	/** Whether a grammar of the target changed or was removed since the last build. */
+	private static boolean grammarsChanged(ModuleBuildTarget target,
+										   DirtyFilesHolder<JavaSourceRootDescriptor, ModuleBuildTarget> dirtyFilesHolder) throws IOException
 	{
 		boolean[] changed = {false};
 		dirtyFilesHolder.processDirtyFiles((dirtyTarget, file, root) -> {
@@ -167,16 +241,20 @@ public class AntlrSourceGeneratorBuilder extends ModuleLevelBuilder {
 		});
 		if ( changed[0] ) return true;
 
-		for (String removed : dirtyFilesHolder.getRemovedFiles(target)) {
-			if ( removed.endsWith(GRAMMAR_SUFFIX) ) return true;
+		for (Path removed : dirtyFilesHolder.getRemoved(target)) {
+			if ( removed.toString().endsWith(GRAMMAR_SUFFIX) ) return true;
 		}
+		return false;
+	}
 
-		// A generated file that is gone (say, gen/ was deleted by hand) must come back, though
-		// its grammar didn't change. So must the files of a grammar that never had any.
+	/** Whether a file generated earlier is gone (say, gen/ was deleted by hand): it must come
+	 *  back, though its grammar didn't change.
+	 */
+	private static boolean generatedFileMissing(CompileContext context, ModuleBuildTarget target, List<GrammarFile> grammars) throws IOException {
 		SourceToOutputMapping outputs = context.getProjectDescriptor().dataManager.getSourceToOutputMap(target);
 		for (GrammarFile grammar : grammars) {
 			Collection<String> generated = outputs.getOutputs(path(grammar.file));
-			if ( generated==null || generated.isEmpty() ) return true;
+			if ( generated==null ) continue;
 			for (String output : generated) {
 				if ( !new File(output).exists() ) return true;
 			}

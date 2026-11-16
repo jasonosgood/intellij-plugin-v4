@@ -27,7 +27,7 @@ NUM=${VER#*-}                                                   # 2026.2.1
 P=$(ls -d ~/.gradle/caches/*/transforms/*/transformed/idea-$NUM-aarch64 2>/dev/null | head -1)
 [[ -d $P ]] || { echo "extracted IDE idea-$NUM not found; run ./gradlew prepareSandbox once"; exit 1; }
 SB=$ROOT/.intellijPlatform/sandbox/intellij-plugin-v4/$VER
-OUT=${TMPDIR:-/tmp}/antlr-sandbox; mkdir -p "$OUT"
+OUT=$ROOT/tmp/antlr-sandbox; mkdir -p "$OUT"                    # temp files stay in the repo (tmp/ is ignored)
 
 # Any instance of this sandbox: started by this script (args in the argfile) or restarted by
 # the IDE itself (args on the command line)

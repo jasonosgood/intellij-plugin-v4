@@ -6,6 +6,9 @@
 /build/
 /jps-plugin/build/
 
+# Temp files, sandbox test projects, launch-sandbox.sh output
+/tmp/
+
 # downloaded libs/resources
 /lib/
 

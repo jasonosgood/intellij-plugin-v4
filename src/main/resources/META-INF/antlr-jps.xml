@@ -7,4 +7,9 @@
          versions; BuildProcessClasspathTest fails when one no longer matches a shipped jar. -->
     <compileServer.plugin classpath="antlr-jps.jar;antlr4-4.13.2.jar;antlr4-runtime-4.13.2.jar;ST4-4.3.4.jar;antlr-runtime-3.5.3.jar"/>
   </extensions>
+  <projectListeners>
+    <!-- Hears from the builder when it skips grammars; offers to mark their output directory. -->
+    <listener class="org.antlr.intellij.plugin.build.OutputRootOffer"
+              topic="com.intellij.compiler.server.CustomBuilderMessageHandler"/>
+  </projectListeners>
 </idea-plugin>

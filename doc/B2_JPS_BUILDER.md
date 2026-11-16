@@ -1,6 +1,6 @@
 # B.2 design: code generation in the JPS build
 
-Status: design accepted by the owner (2026-11-16); steps 0 to 2 are done, step 3 is built. Scope is item B.2 of
+Status: design accepted by the owner (2026-11-16); steps 0 to 4 are done. Scope is item B.2 of
 [IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
 configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
 Generate action's reporting (B.3) are separate items; where they touch this one it says so.
@@ -200,6 +200,26 @@ Each tested, checked in the sandbox and committed on its own.
    - **A test trap:** JPS treats a source file newer than the build's start as changed during
      the build and builds it again next time. Tests that set file times must stay in the past.
 4. **Conditions and warnings** (decision 5, version drift).
+   Built (2026-11-16):
+   - **Gradle and Maven modules** are recognized as the Gradle JPS plugin recognizes its
+     own: the module file's `ExternalSystem` component or `external.system.id` attribute, and
+     the Maven importer's older marker (`ExternalBuild`). Any build tool named there counts.
+   - **Output directory not a source root:** the grammar is left alone. The check asks the
+     module's model, not the build's root index, because `gen/` needn't exist yet. This holds
+     for every target language: a Python output directory must be a source root too. That is
+     odd for a non-Java target but keeps one rule: no files where the user didn't ask.
+   - **Both are said once per change**, as an information message in the build output: only
+     in a build where a grammar changed (so also the first build and a rebuild).
+   - **The offer:** the builder also sends a custom builder message; `OutputRootOffer` in the
+     IDE shows a notification with "Mark as generated sources root" and "Don't offer again"
+     (per project), at most once per directory per session. Both messages name the
+     directory relative to the module, and marking creates the directory if it's missing. After marking, JPS sees the
+     module's roots changed and the next build generates; a test covers that.
+   - **Version drift:** `RuntimeVersion` finds the ANTLR runtime on the module's compile
+     classpath (the jar holding `RuntimeMetaData`), reads its version from the manifest, and
+     warns when major.minor differs from the tool's, as the runtime's own check does.
+   - The IDE side uses Java plugin classes, so the main project now compiles against the
+     bundled Java plugin; those classes are only referenced from `antlr-jps.xml`.
 5. README, `<change-notes>`, ARCHITECTURE.md; move this doc's decisions to DECISIONS.md.
 
 B.5 (the "cannot find tokens file" editor error) is independent of all of this and can go first.

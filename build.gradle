@@ -107,6 +107,8 @@ repositories {
 dependencies {
     intellijPlatform {
         create(platformType, platformVersion)
+        // Optional at run time (META-INF/antlr-jps.xml): the JPS build and the classes that talk to it.
+        bundledPlugin 'com.intellij.java'
         testFramework(TestFrameworkType.Platform.INSTANCE)
     }
     antlr("org.antlr:antlr4:$antlr4Version") { // use ANTLR version 4

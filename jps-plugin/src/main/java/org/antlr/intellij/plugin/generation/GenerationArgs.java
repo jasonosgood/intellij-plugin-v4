@@ -17,9 +17,11 @@ public final class GenerationArgs {
 	public static final String DEFAULT_OUTPUT_DIR = "gen";
 
 	private final Map<String, String> options;
+	private final String outputRoot;
 
-	private GenerationArgs(Map<String, String> options) {
+	private GenerationArgs(Map<String, String> options, String outputRoot) {
 		this.options = Collections.unmodifiableMap(options);
+		this.outputRoot = outputRoot;
 	}
 
 	public static GenerationArgs of(GenerationSettings settings, GrammarPlace place) {
@@ -34,6 +36,7 @@ public final class GenerationArgs {
 		// The output directory: below the content root unless absolute, then the package's path.
 		String outputDir = isEmpty(settings.outputDir) ? DEFAULT_OUTPUT_DIR : settings.outputDir;
 		outputDir = underContentRoot(place.expandPath.apply(outputDir), place);
+		String outputRoot = outputDir;
 		if ( !isBlank(pkg) ) outputDir += File.separator+pkg.replace('.', File.separatorChar);
 		options.put("-o", outputDir);
 
@@ -46,7 +49,7 @@ public final class GenerationArgs {
 		options.put(settings.generateListener ? "-listener" : "-no-listener", "");
 		options.put(settings.generateVisitor ? "-visitor" : "-no-visitor", "");
 
-		return new GenerationArgs(options);
+		return new GenerationArgs(options, outputRoot);
 	}
 
 	/** Option to value; "" for an option without one. */
@@ -67,6 +70,11 @@ public final class GenerationArgs {
 	/** The directory the generated files go to, package directories included. */
 	public String outputDir() {
 		return options.get("-o");
+	}
+
+	/** The output directory without the package's directories: what would be a source root. */
+	public String outputRoot() {
+		return outputRoot;
 	}
 
 	private static String underContentRoot(String dir, GrammarPlace place) {

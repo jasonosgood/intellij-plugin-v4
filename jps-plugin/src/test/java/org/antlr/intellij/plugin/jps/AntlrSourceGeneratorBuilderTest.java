@@ -1,9 +1,11 @@
 package org.antlr.intellij.plugin.jps;
 
+import org.antlr.intellij.plugin.generation.BuildMessages;
 import org.jetbrains.jps.build.Standalone;
 import org.jetbrains.jps.cmdline.JpsModelLoader;
 import org.jetbrains.jps.incremental.messages.BuildMessage;
 import org.jetbrains.jps.incremental.messages.CompilerMessage;
+import org.jetbrains.jps.incremental.messages.CustomBuilderMessage;
 import org.jetbrains.jps.model.JpsElementFactory;
 import org.jetbrains.jps.model.JpsModel;
 import org.jetbrains.jps.model.java.JpsJavaSdkType;
@@ -22,6 +24,10 @@ import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
+import java.util.zip.ZipEntry;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -198,6 +204,83 @@ public class AntlrSourceGeneratorBuilderTest {
 		assertTrue(exists("out/production/demo/com/foo/bar/HelloParser.class"));
 	}
 
+	@Test
+	public void leavesAGrammarAloneWhenItsOutputDirectoryIsNotASourceRoot() throws Exception {
+		writeModule(null);
+		write("src/demo/Hello.g4", HELLO);
+
+		List<BuildMessage> messages = build();
+
+		assertEquals(Collections.emptyList(), errors(messages));
+		assertFalse("nothing is written where the user didn't ask for it", exists("gen"));
+		List<String> infos = messages(messages, BuildMessage.Kind.INFO);
+		assertTrue(infos.toString(), infos.stream().anyMatch(info ->
+			info.contains("No ANTLR recognizers generated for 1 grammar(s) of module 'demo': their output directory 'gen' isn't")));
+		List<String> toIde = new ArrayList<>();
+		for (BuildMessage message : messages) {
+			if ( message instanceof CustomBuilderMessage ) {
+				CustomBuilderMessage custom = (CustomBuilderMessage)message;
+				assertEquals(BuildMessages.BUILDER_ID, custom.getBuilderId());
+				assertEquals(BuildMessages.OUTPUT_NOT_SOURCE_ROOT, custom.getMessageType());
+				toIde.add(custom.getMessageText());
+			}
+		}
+		assertEquals(Collections.singletonList(BuildMessages.outputNotSourceRoot("demo", path("gen"))), toIde);
+
+		assertFalse("said once, not on every build",
+			messages(build(), BuildMessage.Kind.INFO).stream().anyMatch(info -> info.contains("ANTLR recognizers")));
+
+		// What the IDE's offer does: once the directory is a source root, the next build generates.
+		writeModule("gen");
+		assertEquals(Collections.emptyList(), errors(build()));
+		assertTrue(exists("gen/demo/HelloParser.java"));
+		assertTrue(exists("out/production/demo/demo/HelloParser.class"));
+	}
+
+	@Test
+	public void leavesAModuleImportedFromGradleOrMavenToItsOwnBuild() throws Exception {
+		String[] markers = {
+			"external.system.id=\"GRADLE\"",
+			"org.jetbrains.idea.maven.project.MavenProjectsManager.isMavenModule=\"true\"",
+		};
+		for (String marker : markers) {
+			writeModule("gen", marker, antlrRuntimeJar());
+			write("src/demo/Hello.g4", HELLO);
+
+			List<BuildMessage> messages = build();
+
+			assertEquals(marker, Collections.emptyList(), errors(messages));
+			assertFalse(marker, exists("gen"));
+			List<String> infos = messages(messages, BuildMessage.Kind.INFO);
+			assertTrue(infos.toString(), infos.stream().anyMatch(info -> info.contains("whose own build generates ANTLR recognizers")));
+		}
+	}
+
+	@Test
+	public void warnsWhenTheModulesRuntimeIsNotTheToolsVersion() throws Exception {
+		File oldRuntime = new File(temp.getRoot(), "antlr4-runtime-4.9.3.jar");
+		Manifest manifest = new Manifest();
+		manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+		manifest.getMainAttributes().put(Attributes.Name.IMPLEMENTATION_VERSION, "4.9.3");
+		try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(oldRuntime.toPath()), manifest)) {
+			jar.putNextEntry(new ZipEntry("org/antlr/v4/runtime/RuntimeMetaData.class")); // only looked for, never loaded
+			jar.closeEntry();
+		}
+		writeModule("gen", "", oldRuntime.getPath().replace(File.separatorChar, '/'));
+		write("src/demo/Hello.g4", HELLO);
+
+		List<String> warnings = messages(build(), BuildMessage.Kind.WARNING); // the compiler's errors don't matter here
+
+		assertTrue(warnings.toString(), warnings.stream().anyMatch(warning -> warning.contains(
+			"ANTLR Tool version "+org.antlr.v4.Tool.VERSION+" used for code generation does not match the current runtime version 4.9.3")));
+	}
+
+	@Test
+	public void saysNothingWhenTheRuntimeMatches() throws Exception {
+		write("src/demo/Hello.g4", HELLO);
+		assertEquals(Collections.emptyList(), messages(build(), BuildMessage.Kind.ERROR, BuildMessage.Kind.WARNING));
+	}
+
 	/** Builds what changed since the last build of this test, as the IDE's Build does. */
 	private List<BuildMessage> build() throws Exception {
 		JpsModelLoader loader = () -> {
@@ -228,22 +311,37 @@ public class AntlrSourceGeneratorBuilderTest {
 	}
 
 	private void writeModule(String generatedSourceRoot) throws IOException {
-		String runtime = new File(org.antlr.v4.runtime.Parser.class.getProtectionDomain().getCodeSource().getLocation().getPath())
-			.getPath().replace(File.separatorChar, '/');
+		writeModule(generatedSourceRoot, "", antlrRuntimeJar());
+	}
+
+	/**
+	 * @param generatedSourceRoot a second source root, marked generated, or null for none
+	 * @param moduleAttributes extra attributes of the module's root element
+	 * @param runtimeJar the module's one library
+	 */
+	private void writeModule(String generatedSourceRoot, String moduleAttributes, String runtimeJar) throws IOException {
+		String generated = generatedSourceRoot==null ? "" :
+			"      <sourceFolder url=\"file://$MODULE_DIR$/"+generatedSourceRoot+"\" isTestSource=\"false\" generated=\"true\"/>\n";
 		write("demo.iml",
-			"<module type=\"JAVA_MODULE\" version=\"4\">\n"+
+			"<module type=\"JAVA_MODULE\" version=\"4\" "+moduleAttributes+">\n"+
 			"  <component name=\"NewModuleRootManager\" inherit-compiler-output=\"true\">\n"+
 			"    <content url=\"file://$MODULE_DIR$\">\n"+
 			"      <sourceFolder url=\"file://$MODULE_DIR$/src\" isTestSource=\"false\"/>\n"+
-			"      <sourceFolder url=\"file://$MODULE_DIR$/"+generatedSourceRoot+"\" isTestSource=\"false\" generated=\"true\"/>\n"+
+			generated+
 			"    </content>\n"+
 			"    <orderEntry type=\"inheritedJdk\"/>\n"+
 			"    <orderEntry type=\"sourceFolder\" forTests=\"false\"/>\n"+
 			"    <orderEntry type=\"module-library\"><library><CLASSES>\n"+
-			"      <root url=\"jar://"+runtime+"!/\"/>\n"+
+			"      <root url=\"jar://"+runtimeJar+"!/\"/>\n"+
 			"    </CLASSES></library></orderEntry>\n"+
 			"  </component>\n"+
 			"</module>\n");
+	}
+
+	/** The ANTLR runtime these tests run with: the version the builder's tool generates for. */
+	private static String antlrRuntimeJar() {
+		return new File(org.antlr.v4.runtime.Parser.class.getProtectionDomain().getCodeSource().getLocation().getPath())
+			.getPath().replace(File.separatorChar, '/');
 	}
 
 	private void writeMisc(String components) throws IOException {

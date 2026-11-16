@@ -11,6 +11,9 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 ## Rules
 - **No CI work.** Don't touch `.github/` or `scripts/github_release_notes.py`.
 - Commit once the owner has verified a step (or when asked); never push without asking.
+- Temp files go in `tmp/` (git-ignored): scratch files, `launch-sandbox.sh` output, and the
+  projects opened in the sandbox IDE (`tmp/jps-spike`). Nothing in `/tmp`, the home directory or
+  a session scratchpad.
 - Design from prior art: name the mature systems that solve the problem, follow their standard
   answer, and justify each deviation with a "Prior art" note in code or docs.
 - `antlr4-xl/` is the owner's project with its own rules ([antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md)):
@@ -24,7 +27,7 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 ## Build and run
 - Target: IntelliJ 2026.2.1 (since-build 262), Java 25 toolchain, Gradle 9.7, IntelliJ Platform
   Gradle Plugin 2.x. Clone with `--recurse-submodules` (or `git submodule update --init`).
-- `./gradlew test`: all tests (171, light fixtures plus plain JUnit; 17 are in `jps-plugin`:
+- `./gradlew test`: all tests (180, light fixtures plus plain JUnit; 24 are in `jps-plugin`:
   the generation core shared with the IDE and the code that runs in IntelliJ's build process,
   both Java 11 with no IDE classes). Add `--rerun` to force a
   rerun when Gradle thinks the task is up to date. `ANTLR_PERF=1` also runs
@@ -35,7 +38,11 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   (`prepareSandbox`) under a running sandbox: the IDE half-reloads the plugin. Use `--restart`.
   The plugin's own traces log at debug: enable `#org.antlr.intellij.plugin` in Help > Diagnostic
   Tools > Debug Log Settings to see them in `idea.log`.
-- `./gradlew verifyPlugin`: Plugin Verifier against the build IDE.
+- `./gradlew verifyPlugin`: Plugin Verifier against the build IDE. It runs `prepareSandbox`
+  (through `buildPlugin`), so the rule above applies: not under a running sandbox.
+- Don't edit a project's `.iml` or `.idea` files from outside to set up a sandbox check: the
+  sandbox IDE restores module roots from its own cache and writes them back. Change roots in
+  the IDE.
 - `-Pantlr4XlDir=...` builds against another antlr4-xl checkout.
 - Keep Gradle output out of context: run with `-q` or pipe through `tail -30`; on failure, grep
   the report or `build/test-results/test/*.xml` for the failing tests, not the whole log. Read
