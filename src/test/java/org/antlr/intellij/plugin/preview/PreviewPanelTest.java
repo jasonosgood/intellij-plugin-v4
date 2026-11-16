@@ -16,6 +16,8 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.PlatformTestUtil;
 import org.antlr.intellij.plugin.GrammarEditorTabListener;
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
+import org.antlr.intellij.plugin.actions.GenerateParserAction;
+import org.antlr.intellij.plugin.actions.TestRuleAction;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.psi.ParserRuleSpecNode;
@@ -24,8 +26,11 @@ import org.antlr.v4.tool.Grammar;
 import org.antlr.v4.tool.LexerGrammar;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.Future;
 import java.util.function.BooleanSupplier;
+import java.util.regex.Pattern;
 import java.util.function.UnaryOperator;
 
 /**
@@ -191,6 +196,32 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertTrue(FileDocumentManager.getInstance().isDocumentUnsaved(doc));
 	}
 
+	/** Test Rule saves all documents first, as Run does, so an unsaved lexer edit isn't left behind. */
+	public void testTestRuleSavesAllDocuments() {
+		select(lexer);
+		Document lexerDoc = editWithoutSaving(lexer, text -> text.replace("DOT  : '.';", "PERIOD : '.';"));
+		select(parser);
+		caretAt("major = NUMBER"); // Test Rule tests the rule the caret is in
+		myFixture.testAction(new TestRuleAction());
+		waitForGrammarLoads();
+		assertFalse(FileDocumentManager.getInstance().isDocumentUnsaved(lexerDoc));
+		assertEquals("versionCore", preview.getPreviewState(parser).startRule());
+	}
+
+	/** Generate saves all documents first, as Build does, and generates even if a save was needed. */
+	public void testGenerateSavesAllDocumentsAndGenerates() throws Exception {
+		select(lexer);
+		Document lexerDoc = editWithoutSaving(lexer, text -> text + "\nTILDE : '~';\n");
+		select(parser);
+		Document parserDoc = editWithoutSaving(parser, text -> text + "\nextra : NUMBER ;\n");
+		myFixture.testAction(new GenerateParserAction());
+		assertFalse(FileDocumentManager.getInstance().isDocumentUnsaved(lexerDoc));
+		assertFalse(FileDocumentManager.getInstance().isDocumentUnsaved(parserDoc));
+		waitFor("generated parser", () -> generated("SemanticVersionParser.java")!=null);
+		assertTrue(generatedText("SemanticVersionParser.java").contains("ExtraContext"));
+		assertTrue(generatedText("SemanticVersionLexer.java").contains("TILDE"));
+	}
+
 	/** Preview state is keyed by file, not path: moving the grammars keeps it. */
 	public void testMovingGrammarsKeepsTheStartRule() throws Exception {
 		select(parser);
@@ -331,6 +362,34 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 	}
 
 	// ------------------------------
+
+	/** Edits the grammar's document and leaves it unsaved. */
+	private Document editWithoutSaving(VirtualFile file, UnaryOperator<String> edit) {
+		Document doc = FileDocumentManager.getInstance().getDocument(file);
+		assertNotNull(doc);
+		WriteCommandAction.runWriteCommandAction(getProject(), () -> doc.setText(edit.apply(doc.getText())));
+		assertTrue(FileDocumentManager.getInstance().isDocumentUnsaved(doc));
+		return doc;
+	}
+
+	/** Puts the selected editor's caret inside the first occurrence of {@code text}. */
+	private void caretAt(String text) {
+		int offset = myFixture.getEditor().getDocument().getText().indexOf(text);
+		assertTrue(text, offset>=0);
+		myFixture.getEditor().getCaretModel().moveToOffset(offset + 1);
+	}
+
+	/** A generated file anywhere under the grammars' directory, or null. */
+	private File generated(String name) {
+		List<File> found = FileUtil.findFilesByMask(Pattern.compile(Pattern.quote(name)), dir);
+		return found.isEmpty() ? null : found.getFirst();
+	}
+
+	private String generatedText(String name) throws IOException {
+		File file = generated(name);
+		assertNotNull(name, file);
+		return FileUtil.loadFile(file);
+	}
 
 	/** Opens {@code file} in the editor (the tab listener hears the change) and waits for its load. */
 	private void select(VirtualFile file) {

@@ -19,6 +19,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
 import org.antlr.intellij.plugin.psi.LexerRuleRefNode;
@@ -36,6 +37,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MyActionUtils {
+	/** Saves all documents before running a tool on a grammar, so it sees what the editors show:
+	 *  the grammar and the grammars it uses ({@code tokenVocab}, imports). Prior art: the
+	 *  platform's Build and Run save all documents first. PSI is committed too, since code
+	 *  generation reads the grammar's {@code @header} through PSI.
+	 */
+	public static void saveAllBeforeRunning(@NotNull Project project) {
+		PsiDocumentManager.getInstance(project).commitAllDocuments();
+		FileDocumentManager.getInstance().saveAllDocuments();
+	}
+
 	public static void selectedFileIsGrammar(AnActionEvent e) {
 		VirtualFile vfile = getGrammarFileFromEvent(e);
 		if ( vfile==null ) {

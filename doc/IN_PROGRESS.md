@@ -26,9 +26,7 @@ saves all documents first, as Build and Run do. Code generation belongs to the b
 
 ### A. Save behavior (first)
 1. Done: switching tabs no longer saves (DONE.md, item 43).
-2. **Tools save all documents.** Generate ANTLR Recognizer and Test Rule call
-   `saveAllDocuments()`, not only save the current grammar, so an unsaved `tokenVocab` lexer
-   isn't left behind. Prior art: Build, Run and VCS actions save all documents first.
+2. Done: Generate and Test Rule save all documents first (DONE.md, item 44).
 3. **Reload on any saved dependency.** The preview reloads when any grammar the previewed
    grammar depends on (`tokenVocab`, imports) changes on disk, not only grammars open in an
    editor (the `isFileOpen` filter in `PreviewService.GrammarSaveListener`). Then `git checkout`
@@ -85,6 +83,9 @@ Not on their own:
   Code reports in a notification balloon; build-integrated generators (Gradle `antlr`, Maven
   `antlr4`, protobuf) report in the Build tool window. Likely: a notification (success, or
   errors with a link to the grammar), and nothing else. `ToolOutput` is then deleted.
+  Note: `GenerateParserAction` runs the tool as a background task, then refreshes the output
+  directory and says "generated" right away, before the task finishes (and even if it fails).
+  The refresh and the notification belong in the task's `onSuccess` / `onThrowable`.
 - **Profile only when the Profiler tab is shown.** Parsing a one-line query on
   `oracle_normal.g4` takes ~330 ms, because the preview parses with exact ambiguity detection
   and profiling on (found in greenfield step 1).

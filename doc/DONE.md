@@ -246,6 +246,13 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     switches the preview; an edit reaches the preview through the platform's saves (⌘S,
     Autosave settings). Prior art: no platform editor saves on a tab switch. Test:
     `PreviewPanelTest.testSwitchingTabsDoesNotSave`. Checked by the owner in the sandbox.
+44. Saving A.2: Generate ANTLR Recognizer and Test Rule save all documents first
+    (`MyActionUtils.saveAllBeforeRunning`), not only the current grammar, so an unsaved
+    `tokenVocab` lexer isn't left behind. Prior art: Build and Run save all documents first.
+    Fixed on the way: Generate on an unsaved grammar with auto-generate on (the default) saved
+    it and generated nothing, expecting the save to generate; the save only did that for a lexer
+    whose parser was previewed. Generate now always generates. Tests:
+    `PreviewPanelTest.testTestRuleSavesAllDocuments`, `testGenerateSavesAllDocumentsAndGenerates`.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

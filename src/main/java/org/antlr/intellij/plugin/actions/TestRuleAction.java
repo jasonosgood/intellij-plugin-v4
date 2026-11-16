@@ -8,10 +8,8 @@ import com.intellij.openapi.actionSystem.LangDataKeys;
 import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.LogicalPosition;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
@@ -110,12 +108,7 @@ public class TestRuleAction extends AnAction implements DumbAware {
 			return; // weird. no rule name.
 		}
 		String ruleName = r.getText();
-		FileDocumentManager docMgr = FileDocumentManager.getInstance();
-		Document doc = docMgr.getDocument(grammarFile);
-		if ( doc!=null ) {
-			docMgr.saveDocument(doc);
-		}
-
+		MyActionUtils.saveAllBeforeRunning(e.getProject());
 		PreviewService.getInstance(e.getProject()).setStartRule(grammarFile, ruleName);
 	}
 
