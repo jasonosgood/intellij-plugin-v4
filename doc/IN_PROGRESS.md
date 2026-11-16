@@ -24,17 +24,13 @@ files the user didn't ask for. Saving follows the platform (⌘S; autosave on id
 loses focus, per Settings > Appearance & Behavior > System Settings > Autosave). Running a tool
 saves all documents first, as Build and Run do. Code generation belongs to the build.
 
-### A. Save behavior (first)
-1. Done: switching tabs no longer saves (DONE.md, item 43).
-2. Done: Generate and Test Rule save all documents first (DONE.md, item 44).
-3. Done: the preview reloads on changes to any grammar it uses, open or not (DONE.md, item 45).
-4. Done: saves write nothing; the editor's checks read a `tokenVocab` lexer's tokens from the
-   lexer grammar (DONE.md, item 46). Open: ANTLR looks for a `tokenVocab` `.tokens` in `-lib`
-   (default: the grammar's directory) before the output directory, so a stray `.tokens` beside
-   a grammar (from an older plugin or a hand-run `antlr4`) shadows the generated one when
-   Generate runs. Consider a warning from Generate when it finds one.
-5. Done: the per-grammar "Auto-generate parsers upon save" setting is gone (DONE.md, item 47).
-6. Record the principle in [DECISIONS.md](DECISIONS.md) with its prior art.
+### A. Save behavior: done
+DONE.md items 43–47; the rule is in [DECISIONS.md](DECISIONS.md) ("Saving and code
+generation"). Left open:
+- **Stray `.tokens` beside a grammar.** ANTLR looks for a `tokenVocab` `.tokens` in `-lib`
+  (default: the grammar's directory) before the output directory, so a stray one (from an
+  older plugin or a hand-run `antlr4`) shadows the generated one when Generate runs. Consider
+  a warning from Generate when it finds one.
 
 ### B. Code generation in the build (larger; after A)
 Prior art: the build generates. Gradle's `antlr` plugin (`generateGrammarSource`, before

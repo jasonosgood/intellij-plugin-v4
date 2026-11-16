@@ -41,6 +41,31 @@ parentheses are item numbers in [DONE.md](DONE.md).
 - **Preview input text stays with the panel, not `PreviewService` (39, 41).** The text typed
   for each grammar is UI state and goes with the editor that shows it; the service holds the
   grammar-derived state (`PreviewState`, start rules) and never calls the UI.
+- **Saving and code generation (43–47).** The plugin never decides when a file is saved, and
+  nothing it does on a save writes files.
+  - Saving follows the platform: Save All, and Autosave (idle, or the IDE losing focus) as the
+    user set it. Switching tabs doesn't save. Prior art: no platform editor saves on a tab
+    switch.
+  - Running a tool on a grammar (Generate ANTLR Recognizer, Test Rule) saves all documents
+    first, so the tool sees what the editors show, `tokenVocab` lexers and imports included.
+    Prior art: Build and Run save all documents first.
+  - Code generation happens only on request (Generate) or in the build, never on a save. A
+    `.tokens` file is generated output, written only into the generated sources directory.
+    Prior art: Gradle's `antlr` and Maven's `antlr4` plugins generate in the build, into a
+    generated-sources directory; Grammar-Kit generates from an explicit action.
+  - Nothing reads generated files to serve the editor. The preview and the editor's checks
+    import a `tokenVocab` lexer's tokens from the lexer grammar itself
+    (`Grammar.importVocab`). Prior art: IntelliJ's editor checks work from PSI and documents,
+    never from build output.
+  - The preview reacts to every change of a grammar it uses, open in an editor or not,
+    whatever caused it (a save, a VCS checkout, another editor; creation, deletion, move,
+    rename), through the VFS listener, filtered by the inputs its cached loads recorded. That
+    filter also keeps other projects' changes out. Prior art: VFS listeners see every change.
+  - On purpose, the preview sees saved text (it reloads on save only) while the editor's checks
+    see the editor's text, unsaved edits to a `tokenVocab` lexer included. Each follows its own
+    prior art: a run uses saved files; editor checks see what the user sees.
+  - The removed "Auto-generate parsers upon save" setting still loads from old projects: the
+    XML serializer skips unknown properties (see "Keep stable").
 - **Keep stable.** Persisted settings: `ANTLRv4GrammarPropertiesComponent` (`@State
   "ANTLRGenerationPreferences"`) stores per-grammar settings keyed by path; users' stored configs
   must still load, and changing the key needs a migration. Dynamic plugin loading: the verifier
