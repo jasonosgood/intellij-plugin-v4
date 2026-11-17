@@ -503,3 +503,11 @@ guidelines.
     `ColoredTreeCellRenderer`). A found Hierarchy node or token row selects its text in the
     input, as a click does. Left out of the parse tree tab, a drawing with no selection
     (DECISIONS.md). Prior art: the Project and Structure views. Tests: two in `PreviewPanelTest`.
+
+## Code generation follow-ups (2026-11-17)
+65. "Don't warn again" on Generate's Gradle or Maven notification (verified in the sandbox,
+    2026-11-17, on `tmp/gradle-check`; this also checked item 54's "not generated" and
+    "Generate anyway"). It generates now and remembers "Generate anyway" for the project
+    (`PropertiesComponent`, as `OutputRootOffer`'s "Don't offer again"); later Generates
+    generate without the notification. Prior art: a dialog's "Don't ask again" remembers its
+    answer. README and change notes updated. Test: `GenerateParserActionTest`.

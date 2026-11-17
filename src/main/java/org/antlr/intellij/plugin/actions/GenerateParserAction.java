@@ -1,6 +1,7 @@
 package org.antlr.intellij.plugin.actions;
 
 import com.intellij.build.BuildViewManager;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationType;
@@ -41,6 +42,8 @@ import java.util.Collections;
  */
 public class GenerateParserAction extends AnAction implements DumbAware {
 	public static final Logger LOG = Logger.getInstance("ANTLR GenerateAction");
+	/** Per project: "Don't warn again" on the step-aside notification; Generate then generates. */
+	static final String DONT_WARN_BUILD_TOOL = "antlr.generate.dontWarnBuildTool";
 
 	@Override
 	public void update(AnActionEvent e) {
@@ -69,11 +72,15 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 			Module module = ModuleUtilCore.findModuleForFile(grammarFile, project);
 			return module==null ? null : ExternalBuildOf.module(module);
 		});
-		if ( buildTool!=null ) {
+		if ( buildTool!=null && warnsAboutBuildTool(project) ) {
 			stepAside(project, grammarFile, buildTool);
 			return;
 		}
 		generate(project, grammarFile);
+	}
+
+	static boolean warnsAboutBuildTool(Project project) {
+		return !PropertiesComponent.getInstance(project).getBoolean(DONT_WARN_BUILD_TOOL);
 	}
 
 	/**
@@ -111,7 +118,10 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 	}
 
 	/** The module's own build generates: say so instead of writing a second copy. Prior art: the
-	 *  JPS builder steps aside for the same modules. */
+	 *  JPS builder steps aside for the same modules. "Don't warn again" remembers "Generate anyway"
+	 *  for the project, as a dialog's "Don't ask again" remembers its answer; stepping aside
+	 *  silently would make Generate a no-op that says nothing. Stored like OutputRootOffer's
+	 *  "Don't offer again". */
 	private static void stepAside(Project project, VirtualFile grammarFile, String buildTool) {
 		Notification notification = new Notification(GrammarFormattingService.NOTIFICATION_GROUP,
 			grammarFile.getName()+" not generated",
@@ -120,6 +130,10 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 			NotificationType.INFORMATION);
 		notification.addAction(NotificationAction.createSimpleExpiring("Generate anyway",
 			() -> generate(project, grammarFile)));
+		notification.addAction(NotificationAction.createSimpleExpiring("Don't warn again", () -> {
+			PropertiesComponent.getInstance(project).setValue(DONT_WARN_BUILD_TOOL, true);
+			generate(project, grammarFile);
+		}));
 		Notifications.Bus.notify(notification, project);
 	}
 

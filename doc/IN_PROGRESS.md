@@ -1,56 +1,35 @@
 # In progress
 
 Open work on branch `grammar-tools`. Finished items move to [DONE.md](DONE.md), grouped by the
-work they belonged to.
-
-## Decisions for this work (2026-11-15)
-- The preview reloads a grammar **on save only**, not on unsaved edits.
-- The preview is essential: the owner edits a grammar and its sample inputs side by side.
-  UX ideas come after the plugin is stable.
-- Preview input from a file is removed (it never worked); input is typed or pasted.
-- Test grammars: grammars-v4 `semver` (MIT; `SemanticVersionLexer.g4` + `SemanticVersionParser.g4`
-  with `tokenVocab`, 81 lines, 13 sample inputs). `xml` (BSD) if lexer modes are needed.
-  Performance yardstick: `antlr4-xl/test/oracle_normal.g4`, the largest grammar known.
-- Upstream later; this may stay a fork.
+work they belonged to; settled decisions go to [DECISIONS.md](DECISIONS.md), and lessons on
+working in this repo to [CLAUDE.md](../CLAUDE.md).
 
 ## Left open from saving and code generation
-The work is in DONE.md ("Saving and code generation", items 43–56); the rules are in
-[DECISIONS.md](DECISIONS.md).
-- **Gradle or Maven module: check Generate in the sandbox** (tabled by the owner,
-  2026-11-16). It should say "not generated" and offer "Generate anyway" (item 54).
-- **"Don't warn again" on that notification** (owner, 2026-11-16), per project. Prior art: the
-  "Don't offer again" action on `OutputRootOffer`'s notification, stored in
-  `PropertiesComponent`. Decide what Generate does then: generate silently, or still step
-  aside without saying so.
+The work is in DONE.md ("Saving and code generation", items 43–56, and item 65); the rules
+are in [DECISIONS.md](DECISIONS.md).
 - **A settings change alone doesn't regenerate** in the JPS build. Changing a grammar's
   package or output directory doesn't make the grammar dirty; Rebuild Project fixes it. A fix
   would store the arguments with the outputs and compare. Prior art: javac option changes
   force a rebuild in JPS.
+- **JPS, Gradle and Maven interplay** (owner, 2026-11-17: revisit later). The plugin knows a
+  module was imported from Gradle or Maven, not whether its build applies an ANTLR plugin.
+  Without one, nothing generates the recognizers: Generate's "not generated… its build
+  generates recognizers" is wrong (only "Generate anyway" or "Don't warn again" recover), the
+  JPS builder steps aside too, and a re-import resets source roots to the build file's, so
+  hand-generated output doesn't stay a source root (expected from how the importers work, not
+  checked). Ideas, cheapest first: reword the notification ("if its build generates
+  recognizers…", link to the build plugin's setup); detect the ANTLR plugin from the imported
+  model or the generated-sources root it adds (Gradle `build/generated-src/antlr/main`, Maven
+  `target/generated-sources/antlr4`; verify against both importers first). Sandbox project:
+  `tmp/gradle-check` (Gradle `antlr` plugin, semver grammars).
 
-## When touching the code anyway
-Not on their own:
-- GUI Designer `.form` files (`InputPanel`, `ProfilerPanel`, `ShowAmbigTreesDialog`,
-  `ConfigANTLRDialogPanel`) → plain Swing or Kotlin UI DSL, when one of them needs changing.
-- Golden-file tests (`ParsingTestCase`, fixture before/after files) where tests are hand-built
-  strings today; when adding tests, not as a rewrite.
-
-## Later: preview UX (after the plugin is stable)
-- **Lexer mode per token** in the Tokens tab (ANTLR Lab shows it; the token doesn't record it).
-  The tabled "Tokens tab: which rule skipped" would give it.
+## Later: preview UX
 - **Lexer DFA per parse.** Parses share the grammar's prediction cache (DONE.md item 58), but
   the lexer's DFA is still built per parse (`createLexerInterpreter`); worth sharing the same
   way if lexing large inputs shows up as slow.
 - **The typing debounce shows nothing.** The 500 ms `MergingUpdateQueue` wait before a parse
   starts has no busy indication (the spinner is DONE.md item 59).
-- **Highlighting target code in actions and `[...]` (owner, if ever needed).** They are one
-  uncolored token each (DONE.md item 60), on purpose. If highlighting them is wanted, try a
-  `LayeredLexer` first: the platform's way to re-lex chosen tokens with another lexer (Java's
-  highlighter does it for strings and doc comments).
 - Owner has more UX ideas for working on a grammar and its samples side by side.
-- **Sample IntelliJ + ANTLR4 project** (owner, 2026-11-16). A small project to open in the
-  sandbox: a grammar, sample inputs, and Java code that uses the generated parser, built by
-  the JPS builder. Doubles as a manual test bed and a demo for users. Prior art: the
-  ANTLR `antlr4-examples` repo and the platform's sample plugins.
 
 ## Tabled
 - **Plugin reload leaks its class loader** (tabled by the owner, 2026-11-16: the platform's
@@ -85,6 +64,16 @@ Not on their own:
   and span, and show the rule name in the Type column. Would also give lexer modes, and
   replace the gap inference in `TokenRows`. Prior art to check first: whether ANTLR Lab or the
   ANTLR v4 VS Code extension shows skipped tokens, and how.
+- **Lexer mode per token** in the Tokens tab (tabled by the owner, 2026-11-17). ANTLR Lab
+  shows it; the token doesn't record it. "Tokens tab: which rule skipped" would give it.
+- **Highlighting target code in actions and `[...]`** (tabled by the owner, 2026-11-17, if
+  ever needed). They are one uncolored token each (DONE.md item 60), on purpose. If
+  highlighting them is wanted, try a `LayeredLexer` first: the platform's way to re-lex chosen
+  tokens with another lexer (Java's highlighter does it for strings and doc comments).
+- **Sample IntelliJ + ANTLR4 project** (owner, 2026-11-16; tabled 2026-11-17). A small project
+  to open in the sandbox: a grammar, sample inputs, and Java code that uses the generated
+  parser, built by the JPS builder. Doubles as a manual test bed and a demo for users. Prior
+  art: the ANTLR `antlr4-examples` repo and the platform's sample plugins.
 
 ## Before sharing
 - antlr4-xl changes live only in the submodule, branch `plugin-linter-api` (`8ffe462`,

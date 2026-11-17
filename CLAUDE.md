@@ -14,7 +14,8 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 - Temp files go in `tmp/` (git-ignored): scratch files, `launch-sandbox.sh` output, and the
   projects opened in the sandbox IDE (`tmp/jps-spike` for the JPS build, `tmp/tokens-check`
   for the preview: semver and a grammar with hidden and skipped tokens; `tmp/oracle-check`, a
-  copy of `oracle_normal.g4`, for speed). Nothing in `/tmp`, the home directory or a session
+  copy of `oracle_normal.g4`, for speed; `tmp/gradle-check`, a Gradle project with the `antlr`
+  plugin and the semver grammars). Nothing in `/tmp`, the home directory or a session
   scratchpad.
 - Design from prior art: name the mature systems that solve the problem, follow their standard
   answer, and justify each deviation with a "Prior art" note in code or docs.
@@ -32,7 +33,7 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 ## Build and run
 - Target: IntelliJ 2026.2.1 (since-build 262), Java 25 toolchain, Gradle 9.7, IntelliJ Platform
   Gradle Plugin 2.x. Clone with `--recurse-submodules` (or `git submodule update --init`).
-- `./gradlew test`: all tests (228, light fixtures plus plain JUnit; 27 are in `jps-plugin`:
+- `./gradlew test`: all tests (229, light fixtures plus plain JUnit; 27 are in `jps-plugin`:
   the generation core shared with the IDE and the code that runs in IntelliJ's build process,
   both Java 11 with no IDE classes). Add `--rerun` to force a
   rerun when Gradle thinks the task is up to date. `ANTLR_PERF=1` also runs

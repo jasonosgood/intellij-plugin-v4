@@ -81,7 +81,8 @@ Generate ANTLR Recognizer: use Gradle's
 [`antlr4-maven-plugin`](https://www.antlr.org/api/maven-plugin/latest/), so the IDE and the
 command line build the same way. A second copy from the plugin would mean duplicate classes,
 maybe from another ANTLR version. If your build doesn't generate them, Generate's
-notification offers "Generate anyway".
+notification offers "Generate anyway", and "Don't warn again" to always generate in that
+project.
 
 **On request.** Generate ANTLR Recognizer (ctrl-shift-G / meta-shift-G) runs ANTLR on the
 current grammar, with the same settings, and reports in the Build tool window, as the build

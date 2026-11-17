@@ -3,6 +3,15 @@
 Settled decisions for branch `grammar-tools`; reopen only with a reason. Numbers in
 parentheses are item numbers in [DONE.md](DONE.md).
 
+- **Ground rules for this branch (2026-11-15).**
+  - The preview reloads a grammar **on save only**, not on unsaved edits.
+  - The preview is essential: the owner edits a grammar and its sample inputs side by side.
+    UX ideas come after the plugin is stable.
+  - Test grammars: grammars-v4 `semver` (MIT; `SemanticVersionLexer.g4` +
+    `SemanticVersionParser.g4` with `tokenVocab`, 81 lines, 13 sample inputs). `xml` (BSD) if
+    lexer modes are needed. Performance yardstick: `antlr4-xl/test/oracle_normal.g4`, the
+    largest grammar known.
+  - Upstream later; this may stay a fork.
 - **Two meta-grammars (10).** The plugin's `ANTLRv4Parser.g4` drives the PSI (34 source files
   depend on its rules and tokens) and has IDE needs (lexer modes for actions, error recovery);
   xl's `ANTLR4.g4` is the owner's rewrite and off-limits without permission. Prior art:
@@ -111,9 +120,12 @@ parentheses are item numbers in [DONE.md](DONE.md).
   - Known gap: a settings change alone doesn't regenerate; Rebuild Project does.
   - Generate ANTLR Recognizer agrees with the builder: in a Gradle or Maven module it steps
     aside, offering "Generate anyway" since the build tool is known but not whether it applies
-    an ANTLR plugin (54). It reports in the Build tool window, like the build, with a balloon
-    only on failure and the status bar otherwise. Prior art: actions running a Gradle or Maven
-    task; the platform's build output (opens the window only on failure). Not a console.
+    an ANTLR plugin (54). "Don't warn again" remembers "Generate anyway" for the project, as a
+    dialog's "Don't ask again" remembers its answer; stepping aside silently would make
+    Generate a no-op that says nothing. It reports in the Build tool window, like the build,
+    with a balloon only on failure and the status bar otherwise. Prior art: actions running a
+    Gradle or Maven task; the platform's build output (opens the window only on failure). Not
+    a console.
 - **The preview is a tool window, not a split editor (2026-11-17).** IntelliJ's previews
   (Markdown, AsciiDoc, Compose) sit beside the source in a split editor. Ours runs a grammar
   against separate input and shows several result tabs, like tools that evaluate something
@@ -150,3 +162,10 @@ parentheses are item numbers in [DONE.md](DONE.md).
   registered against a disposable). The plugin ID `org.antlr.intellij.plugin` and action IDs
   (keymaps refer to them).
 - **No CI.** Work is local and experimental; `.github/` is left alone.
+
+## When touching the code anyway
+Not on their own:
+- GUI Designer `.form` files (`InputPanel`, `ProfilerPanel`, `ShowAmbigTreesDialog`,
+  `ConfigANTLRDialogPanel`) → plain Swing or Kotlin UI DSL, when one of them needs changing.
+- Golden-file tests (`ParsingTestCase`, fixture before/after files) where tests are hand-built
+  strings today; when adding tests, not as a rewrite.

@@ -102,7 +102,8 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	        (ANTLR's messages, each going to its place in the grammar, and where the files went),
 	        instead of the Tool Output window, with a notification only when it fails. It no longer
 	        says "generated" when ANTLR reported errors. In a Gradle or Maven module it generates
-	        nothing, since that build generates; "Generate anyway" is offered.</li>
+	        nothing, since that build generates; "Generate anyway" is offered, and "Don't warn
+	        again" to always generate in that project.</li>
 	    <li>New: when a <code>.tokens</code> file left beside the grammars (by an older version of this
 	        plugin, for example) would be used instead of the generated one, Generate ANTLR Recognizer
 	        offers to delete it, and the build warns.</li>
