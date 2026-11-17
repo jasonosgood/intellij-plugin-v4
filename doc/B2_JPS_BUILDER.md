@@ -2,8 +2,8 @@
 
 Status: done (2026-11-16); all steps are built and the owner checked steps 3 and 4 in the
 sandbox. This is the design record; the settled rules are summarized in
-[DECISIONS.md](DECISIONS.md) ("Code generation in the JPS build"). Scope is item B.2 of
-[IN_PROGRESS.md](IN_PROGRESS.md): in plain IntelliJ (JPS) projects, Build, Rebuild and run
+[DECISIONS.md](DECISIONS.md) ("Code generation in the JPS build"). Scope is item B.2 of the saving and
+code generation work ([DONE.md](DONE.md), items 48–52): in plain IntelliJ (JPS) projects, Build, Rebuild and run
 configurations generate recognizers from grammars. Gradle and Maven projects (B.1) and the
 Generate action's reporting (B.3) are separate items; where they touch this one it says so.
 

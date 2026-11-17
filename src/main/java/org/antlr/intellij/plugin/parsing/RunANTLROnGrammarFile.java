@@ -55,7 +55,7 @@ public class RunANTLROnGrammarFile extends Task.Modal {
 
 	/** Generates the recognizer for {@code grammarFile} into its output directory. Run only on
 	 *  the user's request (Generate ANTLR Recognizer), never on a save: code generation belongs
-	 *  to the user or the build (doc/IN_PROGRESS.md, "Saving and code generation").
+	 *  to the user or the build (doc/DECISIONS.md, "Saving and code generation").
 	 */
 	public RunANTLROnGrammarFile(VirtualFile grammarFile,
 								 @Nullable final Project project,

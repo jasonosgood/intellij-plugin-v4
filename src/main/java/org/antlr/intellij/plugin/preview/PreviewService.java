@@ -62,7 +62,7 @@ import java.util.function.UnaryOperator;
  *  Prior art: the platform's services + message bus topics (the "migrating components to
  *  services" guide; {@code FileEditorManagerListener}). A project service, so one per project,
  *  disposed when the project closes; its listeners and jobs are registered against it.
- *  Deviation from the plan in doc/IN_PROGRESS.md: input text stays with the panel, which owns
+ *  Deviation from the greenfield plan (doc/DONE.md, items 36–42): input text stays with the panel, which owns
  *  the input editor (step 4); a parse is given its text.
  */
 @Service(Service.Level.PROJECT)

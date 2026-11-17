@@ -166,6 +166,62 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
       late shows the selected grammar; Test Rule with the preview closed keeps the start rule;
       input kept per grammar across switches; Tool Output shows generation output; project
       close disposes cleanly with no errors.
+18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
+    names `T__N` from the first number not already used in the grammar (and names each literal
+    once); the `BAD_*` markers are `final`.
+
+### From code review
+19. Extract Rule "replace all" created mutual left recursion. A selection or occurrence at the
+    left edge of an alternative of rule `e` that starts with `e` is refused (the selection with
+    a reason, occurrences are skipped). `e : '(' «e '*' e» ')'` is still allowed.
+20. Extract Rule broke labels and `$x` references (`ExtractRuleOccurrences.problem`): refused
+    when an action outside the run uses a label or element only inside it, when an action
+    inside it uses anything not defined in it (including `$text`, arguments), or when it holds
+    some but not all of a rule's `# label`ed alternatives. Label and action moving together
+    (`«y=A {$y.text}»`) is fine.
+21. Name dialog accepted keywords. `ExtractRuleNameSuggester.isReserved` (ANTLR words +
+    `SourceVersion.isKeyword`) is shared by the suggester and the dialog.
+22. Extract Rule passed no `PsiFile` to `runWriteCommandAction`.
+23. Sort and Extract parsed on the EDT. Both plan in `ReadAction.nonBlocking` and finish on the
+    EDT. Extract re-checks the document's modification stamp before applying, since the user can
+    edit while the occurrence popup or name dialog is open.
+24. Sort replaced the whole document. `format/TextDiffs.apply` applies the result as a line diff
+    (`ComparisonManager`), like the platform does for async formatters; the caret on an unmoved
+    line stays put (test).
+25. Format on a range did nothing. The service declares `FORMAT_FRAGMENTS`, formats the whole
+    grammar and keeps only the changes on the requested lines (`TextDiffs.keepChangesIn`; prior
+    art: google-java-format's range formatting).
+26. Sort description said lexer rules stay in place; plugin.xml and the javadoc are corrected.
+27. xl source set included both `ANTLR4.g4` paths. `build.gradle` includes whichever exists,
+    preferring `src/xl/` (the owner's rename in the standalone antlr4-xl repo).
+28. Cleanup: `matchRuns` extends each run incrementally; `deepestEnclosing` replaced by
+    `Trees.getRootOfSubtreeEnclosingRegion`; dead `getCharIndexOfNextRuleStart` deleted.
+29. Stale IDE logs `doc/error.txt`, `doc/error2.txt` deleted, never committed.
+31. Redundant grammar reload after each project opens. The save path skips the reload when the
+    grammar's text equals the text it was last loaded from (`loadedGrammarText`). Not verified
+    in the sandbox; the event's source is still unknown. (Greenfield step 2 replaces this.)
+34. Profiler: clicking a decision row threw "Read access is allowed from inside read-action
+    only". 2026.2 no longer gives plain Swing listeners an implicit lock, so the profiler row
+    click, the parse-tree hierarchy selection and the input radio buttons run their editor work
+    in `WriteIntentReadAction.run` (the fix the platform's error message names). The verifier
+    lists `WriteIntentReadAction` as experimental API; kept, since the platform prescribes it.
+35. Live templates removed (none showed up in the sandbox, and the owner doesn't use them).
+
+### Cleanup and docs
+- Removed unreferenced helpers (`ParsingUtils.nextRealToken`/`previousRealToken`/
+  `tokenizeANTLRGrammar`, `RefactorUtils.getAncestorWithType`/`childIndexOf`/`replaceText`/
+  `insertText`, `ProfilerPanel.getProfilerDataTable`) and unused images (`lexer-templates.png`,
+  `pycharm.png`).
+- README: live templates section removed; lint, format, sort and the submodule checkout step
+  added. ARCHITECTURE: grammar tools section, IntelliJ Platform Gradle Plugin 2.x, tool window
+  ownership.
+
+## Preview and grammar model: the greenfield plan (2026-11-15)
+Six steps, each tested, checked in the sandbox and committed on its own: characterization
+tests; `GrammarCache`; platform async; immutable `PreviewState`; `PreviewService` with
+`PreviewListener.TOPIC`; routine logging at debug. Lasting constraints are in
+[DECISIONS.md](DECISIONS.md) ("Keep stable").
+
 36. Greenfield step 1: characterization tests for the preview (`preview/PreviewPanelTest`,
     12 tests) on grammars-v4 `semver`, copied with its MIT license into
     `src/test/resources/preview/semver`. They build a `PreviewPanel` as the tool window does
@@ -242,6 +298,16 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     editor creation, ANTLR tool runs) log at debug, not info; `ProfilerPanel`'s `System.err`
     is a logger warning. Enable with Help > Diagnostic Tools > Debug Log Settings
     (`#org.antlr.intellij.plugin`).
+
+## Saving and code generation (2026-11-15 to 2026-11-16)
+Principle: the plugin never decides when a file is saved, and nothing it does on a save writes
+files the user didn't ask for; code generation belongs to the build. The rules are in
+[DECISIONS.md](DECISIONS.md) ("Saving and code generation", "Code generation in the JPS
+build"); the JPS builder's design is in [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md). Prior art:
+Gradle's `antlr` plugin, `antlr4-maven-plugin`, protobuf-gradle-plugin; JPS source-generator
+builders (annotation processing, Android's `R.java`). Grammar-Kit and JFlex ship no JPS
+builder.
+
 43. Saving A.1: switching tabs no longer saves the grammar. `GrammarEditorTabListener` only
     switches the preview; an edit reaches the preview through the platform's saves (⌘S,
     Autosave settings). Prior art: no platform editor saves on a tab switch. Test:
@@ -282,7 +348,7 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
       directory by Generate or the build. Prior art: ANTLR writes it beside the recognizer;
       the Gradle and Maven ANTLR plugins put it in their generated-sources directory.
     - plugin.xml change notes cover A.1–A.4.
-    - Known regression, fixed with B (IN_PROGRESS.md, B.5): with no generated `.tokens`, the
+    - Known regression, fixed with B.5 (item 53): with no generated `.tokens`, the
       parser's editor reports "cannot find tokens file" on its `tokenVocab` option.
     - Checked by the owner in the sandbox.
 47. Saving A.5: the per-grammar "Auto-generate parsers upon save" setting (`autoGen`, on by
@@ -318,11 +384,6 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     says "generated" when ANTLR reported errors, and no longer writes to Tool Output. In a
     Gradle or Maven module (`ExternalBuildOf`, the IDE's side of the builder's `ExternalBuild`)
     it steps aside and offers "Generate anyway". README and change notes updated.
-56. Plugin reload in a running sandbox: `launch-sandbox.sh` passed `-Dplugin.path`, a directory
-    `idea.plugins.path` also scans, so the IDE held the plugin twice and refused every unload;
-    the old classes then ran against the new jars ("Cannot find suitable constructor"). Without
-    it, rebuilding under the sandbox unloads and reloads the plugin. The class loader still
-    leaks through a platform icon cache (tabled, doc/IN_PROGRESS.md).
 55. A.: stray `.tokens` warning. ANTLR reads a `tokenVocab` `.tokens` from `-lib` (default: the
     grammar's directory) before the output directory, so one left there by an older plugin or
     a hand-run `antlr4` shadows the generated one, with possibly stale token types. The
@@ -331,6 +392,17 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     a `.tokens` without its lexer is a supplied vocabulary and is left alone. The build warns;
     Generate asks first, before the Gradle/Maven check: Delete Stray File, Continue Anyway or
     Cancel (owner's call, 2026-11-16).
+56. Plugin reload in a running sandbox: `launch-sandbox.sh` passed `-Dplugin.path`, a directory
+    `idea.plugins.path` also scans, so the IDE held the plugin twice and refused every unload;
+    the old classes then ran against the new jars ("Cannot find suitable constructor"). Without
+    it, rebuilding under the sandbox unloads and reloads the plugin. The class loader still
+    leaks through a platform icon cache (tabled, doc/IN_PROGRESS.md).
+
+## Preview: speed and feedback on large grammars (2026-11-17)
+Measured on `oracle_normal.g4`. Preview parses went from ~330 ms per keystroke to ~27 ms;
+the preview shows a spinner while it works; typing in the grammar is fast. Lessons are in
+CLAUDE.md ("Diagnosing slowness").
+
 57. Preview Tokens tab, and a lexer grammar on its own (verified in the sandbox, 2026-11-17).
     A lexer grammar alone used to show "Issues with parser and/or lexer grammar(s) prevent
     preview" though nothing was wrong; now its input is tokenized without a parser
@@ -382,6 +454,11 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     (one token each). Neither lexer reports an error on grammars-v4 (1,102 files); a full lex
     of `oracle_normal.g4` takes ~4 ms. Prior art: the platform's separate
     highlighting and parsing lexers. Tests: `ANTLRv4HighlightingLexerTest`.
+
+## Preview: behaves like other IntelliJ previews (2026-11-17)
+Conventions and the remaining steps are in [IN_PROGRESS.md](IN_PROGRESS.md). Prior art:
+Compose Preview and SwiftUI previews; the IntelliJ UI guidelines.
+
 61. The preview pauses on grammar errors; the Tool Output window is gone (verified in the
     sandbox, 2026-11-17). Grammars opt into the platform's problem-file tracking
     (`GrammarProblemFileFilter`, a `problemFileHighlightFilter`; `WolfTheProblemSolver`), so
@@ -408,52 +485,3 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     isFileModified`, what the editor tab and Save All go by), fed by a document listener and
     `FileDocumentManagerListener` (saved, reverted, reloaded) as `PreviewListener.unsavedChanged`.
     Prior art: Compose Preview's "out of date" banner. Tests: four in `PreviewPanelTest`.
-18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
-    names `T__N` from the first number not already used in the grammar (and names each literal
-    once); the `BAD_*` markers are `final`.
-
-### From code review
-19. Extract Rule "replace all" created mutual left recursion. A selection or occurrence at the
-    left edge of an alternative of rule `e` that starts with `e` is refused (the selection with
-    a reason, occurrences are skipped). `e : '(' «e '*' e» ')'` is still allowed.
-20. Extract Rule broke labels and `$x` references (`ExtractRuleOccurrences.problem`): refused
-    when an action outside the run uses a label or element only inside it, when an action
-    inside it uses anything not defined in it (including `$text`, arguments), or when it holds
-    some but not all of a rule's `# label`ed alternatives. Label and action moving together
-    (`«y=A {$y.text}»`) is fine.
-21. Name dialog accepted keywords. `ExtractRuleNameSuggester.isReserved` (ANTLR words +
-    `SourceVersion.isKeyword`) is shared by the suggester and the dialog.
-22. Extract Rule passed no `PsiFile` to `runWriteCommandAction`.
-23. Sort and Extract parsed on the EDT. Both plan in `ReadAction.nonBlocking` and finish on the
-    EDT. Extract re-checks the document's modification stamp before applying, since the user can
-    edit while the occurrence popup or name dialog is open.
-24. Sort replaced the whole document. `format/TextDiffs.apply` applies the result as a line diff
-    (`ComparisonManager`), like the platform does for async formatters; the caret on an unmoved
-    line stays put (test).
-25. Format on a range did nothing. The service declares `FORMAT_FRAGMENTS`, formats the whole
-    grammar and keeps only the changes on the requested lines (`TextDiffs.keepChangesIn`; prior
-    art: google-java-format's range formatting).
-26. Sort description said lexer rules stay in place; plugin.xml and the javadoc are corrected.
-27. xl source set included both `ANTLR4.g4` paths. `build.gradle` includes whichever exists,
-    preferring `src/xl/` (the owner's rename in the standalone antlr4-xl repo).
-28. Cleanup: `matchRuns` extends each run incrementally; `deepestEnclosing` replaced by
-    `Trees.getRootOfSubtreeEnclosingRegion`; dead `getCharIndexOfNextRuleStart` deleted.
-29. Stale IDE logs `doc/error.txt`, `doc/error2.txt` deleted, never committed.
-31. Redundant grammar reload after each project opens. The save path skips the reload when the
-    grammar's text equals the text it was last loaded from (`loadedGrammarText`). Not verified
-    in the sandbox; the event's source is still unknown. (Greenfield step 2 replaces this.)
-34. Profiler: clicking a decision row threw "Read access is allowed from inside read-action
-    only". 2026.2 no longer gives plain Swing listeners an implicit lock, so the profiler row
-    click, the parse-tree hierarchy selection and the input radio buttons run their editor work
-    in `WriteIntentReadAction.run` (the fix the platform's error message names). The verifier
-    lists `WriteIntentReadAction` as experimental API; kept, since the platform prescribes it.
-35. Live templates removed (none showed up in the sandbox, and the owner doesn't use them).
-
-### Cleanup and docs
-- Removed unreferenced helpers (`ParsingUtils.nextRealToken`/`previousRealToken`/
-  `tokenizeANTLRGrammar`, `RefactorUtils.getAncestorWithType`/`childIndexOf`/`replaceText`/
-  `insertText`, `ProfilerPanel.getProfilerDataTable`) and unused images (`lexer-templates.png`,
-  `pycharm.png`).
-- README: live templates section removed; lint, format, sort and the submodule checkout step
-  added. ARCHITECTURE: grammar tools section, IntelliJ Platform Gradle Plugin 2.x, tool window
-  ownership.

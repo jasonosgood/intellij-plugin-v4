@@ -1,6 +1,7 @@
 # In progress
 
-Open work on branch `grammar-tools`. Finished items move to [DONE.md](DONE.md).
+Open work on branch `grammar-tools`. Finished items move to [DONE.md](DONE.md), grouped by the
+work they belonged to.
 
 ## Decisions for this work (2026-11-15)
 - The preview reloads a grammar **on save only**, not on unsaved edits.
@@ -12,91 +13,49 @@ Open work on branch `grammar-tools`. Finished items move to [DONE.md](DONE.md).
   Performance yardstick: `antlr4-xl/test/oracle_normal.g4`, the largest grammar known.
 - Upstream later; this may stay a fork.
 
-## Done: greenfield plan for the preview and grammar model
-Six steps, each tested, checked in the sandbox and committed on its own (DONE.md, items 36–42):
-characterization tests; `GrammarCache`; platform async; immutable `PreviewState`; `PreviewService`
-with `PreviewListener.TOPIC`; routine logging at debug. Lasting constraints are in
-[DECISIONS.md](DECISIONS.md) ("Keep stable").
-
-## Done: speed and feedback on large grammars (2026-11-17)
-Measured on `oracle_normal.g4` (DONE.md, items 58–60; 58 and 60 checked in the sandbox):
-- Preview parses reuse the grammar's prediction cache: ~330 ms per keystroke to ~27 ms.
-- The preview shows a spinner while a grammar loads or a parse runs.
-- The editor highlights with antlr4-xl's lexer, which restarts anywhere: typing is fast, and
-  an edit inside `options { }` no longer turns the rest of the file into errors.
-Tabled: which rule skipped a token (Tokens tab). Lessons are in CLAUDE.md ("Diagnosing
-slowness").
-
 ## Now: the preview behaves like other IntelliJ previews (decided 2026-11-17)
 Prior art: Compose Preview (Android Studio) and SwiftUI previews pause on errors and mark stale
 results; Markdown and PlantUML previews; the IntelliJ UI guidelines (plugins.jetbrains.com/docs/
 intellij: Banner, Notification types, Empty state, Progress indicators, Tool window). The
 guidelines say nothing about paused or stale content; Compose and SwiftUI settle that.
 
-Conventions, and where the preview stands:
+Conventions (those already followed are marked with the DONE.md item):
 - **Placement:** other previews are split editors; ours stays a tool window (DECISIONS.md).
 - **Errors:** pause, don't try. A grammar with errors in the editor is not loaded; the
   preview keeps its last good result dimmed, under an Error banner naming the file (no link:
   that grammar is open and selected already). It resumes when the errors go. Errors
   themselves are the editor's (marks) and the build's (Build tool window); the preview only
-  points to them. Done (step 1).
+  points to them. (61)
 - **Messages:** the platform's banner (`EditorNotificationPanel`) at the top of the pane, two
-  sentences at most, at most two actions; not text drawn as a parse tree node. Done (step 1).
+  sentences at most, at most two actions; not text drawn as a parse tree node. (61)
 - **Empty states:** `StatusText` with a reason and one or two links ("No start rule
-  selected"), not a fake tree node. Done (step 1).
-- **Busy:** spinner for work over the delay. Done (DONE.md item 59).
+  selected"), not a fake tree node. (61)
+- **Busy:** spinner for work over the delay. (59)
 - **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date: an
-  Info banner says so, with a Save link, as Compose does. Done (step 2).
+  Info banner says so, with a Save link, as Compose does. (62)
 - **Reports:** problems in a file go in the editor, build problems in the Build tool window,
   a balloon only when the user must act. Generate ANTLR Recognizer reports only in a balloon.
-- **Consoles** are for running processes. The Tool Output window is gone (step 1).
+- **Consoles** are for running processes. The Tool Output window is gone. (61)
 
-Steps, each checked in the sandbox and committed on its own:
-1. **Pause on errors; remove Tool Output. Done** (DONE.md item 61).
-2. **Out of date banner while the grammar or its lexer has unsaved changes. Done** (DONE.md
-   item 62).
+Steps, each checked in the sandbox and committed on its own. Done: 1, pause on errors and
+remove Tool Output (DONE.md item 61); 2, out-of-date banner (item 62). Left:
 3. **Generate ANTLR Recognizer reports in the Build tool window** (`BuildViewManager`), with
    a balloon only on failure, as actions running Gradle or Maven tasks do.
 4. **Speed search** in the parse tree, Hierarchy and Tokens tabs, if missing.
 
-## Next: saving and code generation (decided 2026-11-15)
-Principle: the plugin never decides when a file is saved, and nothing it does on a save writes
-files the user didn't ask for. Saving follows the platform (⌘S; autosave on idle or when the IDE
-loses focus, per Settings > Appearance & Behavior > System Settings > Autosave). Running a tool
-saves all documents first, as Build and Run do. Code generation belongs to the build.
-
-### A. Save behavior: done
-DONE.md items 43–47; the rule is in [DECISIONS.md](DECISIONS.md) ("Saving and code
-generation"). Left open:
-- **Stray `.tokens` beside a grammar. Done** (DONE.md item 55).
-
-### B. Code generation in the build (larger; after A)
-Prior art: the build generates. Gradle's `antlr` plugin (`generateGrammarSource`, before
-`compileJava`), Maven's `antlr4-maven-plugin` (`generate-sources`), protobuf-gradle-plugin. In
-plain IntelliJ projects the build is JPS, which runs source-generator builders before the
-compilers: annotation processing writes generated sources there; Android generated `R.java`
-with a JPS builder. Grammar-Kit and JFlex ship no JPS builder: an explicit action, plus Gradle
-plugins for real builds.
-1. **Gradle or Maven projects: the build generates. Done** (DONE.md item 54). Not yet checked
-   in the sandbox: Generate in a Gradle or Maven module should say "not generated" and offer
-   "Generate anyway" (tabled by the owner, 2026-11-16).
-   - **"Don't warn again" on that notification** (owner, 2026-11-16), per project. Prior art:
-     the "Don't offer again" action on `OutputRootOffer`'s notification, stored in
-     `PropertiesComponent`. Decide what Generate does then: generate silently, or still step
-     aside without saying so.
-2. **Plain JPS projects: a JPS source-generator builder. Done** (DONE.md items 48–52; design
-   in [B2_JPS_BUILDER.md](B2_JPS_BUILDER.md); the rules in [DECISIONS.md](DECISIONS.md), "Code
-   generation in the JPS build"). Build, Rebuild and run configurations generate,
-   incrementally; generate-on-save comes from the platform's *Actions on Save > Build
-   project*. Left open:
-   - **A settings change alone doesn't regenerate.** Changing a grammar's package or output
-     directory doesn't make the grammar dirty; Rebuild Project fixes it. A fix would store
-     the arguments with the outputs and compare. Prior art: javac option changes force a
-     rebuild in JPS.
-3. **Generate ANTLR Recognizer stays** for one-offs, reporting in a notification. **Done**
-   (DONE.md item 54).
-4. **README points to the Gradle and Maven plugins. Done** (DONE.md item 54).
-5. **"Cannot find tokens file" in a `tokenVocab` parser. Done** (DONE.md item 53).
+## Left open from saving and code generation
+The work is in DONE.md ("Saving and code generation", items 43–56); the rules are in
+[DECISIONS.md](DECISIONS.md).
+- **Gradle or Maven module: check Generate in the sandbox** (tabled by the owner,
+  2026-11-16). It should say "not generated" and offer "Generate anyway" (item 54).
+- **"Don't warn again" on that notification** (owner, 2026-11-16), per project. Prior art: the
+  "Don't offer again" action on `OutputRootOffer`'s notification, stored in
+  `PropertiesComponent`. Decide what Generate does then: generate silently, or still step
+  aside without saying so.
+- **A settings change alone doesn't regenerate** in the JPS build. Changing a grammar's
+  package or output directory doesn't make the grammar dirty; Rebuild Project fixes it. A fix
+  would store the arguments with the outputs and compare. Prior art: javac option changes
+  force a rebuild in JPS.
 
 ## When touching the code anyway
 Not on their own:
@@ -106,15 +65,13 @@ Not on their own:
   strings today; when adding tests, not as a rewrite.
 
 ## Later: preview UX (after the plugin is stable)
-- **Tokens tab; lexer grammar on its own. Done** (DONE.md item 57). Not done: lexer mode per
-  token (ANTLR Lab shows it; the token doesn't record it), which the tabled "Tokens tab: which
-  rule skipped" would give.
-- **Slow parse on a large grammar. Done** (DONE.md item 58): the cause was a cold prediction
-  cache on every parse, not profiling, so the preview still always profiles. Not done: the
-  lexer's DFA is still per parse (`createLexerInterpreter`); worth sharing the same way if
-  lexing large inputs shows up as slow.
-- **Show that the preview is working. Done** (DONE.md item 59). Not done: the 500 ms
-  `MergingUpdateQueue` wait before a parse starts shows nothing (it is the typing debounce).
+- **Lexer mode per token** in the Tokens tab (ANTLR Lab shows it; the token doesn't record it).
+  The tabled "Tokens tab: which rule skipped" would give it.
+- **Lexer DFA per parse.** Parses share the grammar's prediction cache (DONE.md item 58), but
+  the lexer's DFA is still built per parse (`createLexerInterpreter`); worth sharing the same
+  way if lexing large inputs shows up as slow.
+- **The typing debounce shows nothing.** The 500 ms `MergingUpdateQueue` wait before a parse
+  starts has no busy indication (the spinner is DONE.md item 59).
 - **Highlighting target code in actions and `[...]` (owner, if ever needed).** They are one
   uncolored token each (DONE.md item 60), on purpose. If highlighting them is wanted, try a
   `LayeredLexer` first: the platform's way to re-lex chosen tokens with another lexer (Java's
@@ -122,7 +79,7 @@ Not on their own:
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 - **Sample IntelliJ + ANTLR4 project** (owner, 2026-11-16). A small project to open in the
   sandbox: a grammar, sample inputs, and Java code that uses the generated parser, built by
-  the JPS builder (B). Doubles as a manual test bed and a demo for users. Prior art: the
+  the JPS builder. Doubles as a manual test bed and a demo for users. Prior art: the
   ANTLR `antlr4-examples` repo and the platform's sample plugins.
 
 ## Tabled

@@ -45,7 +45,7 @@ import java.util.function.UnaryOperator;
 
 /**
  * Characterization tests for the ANTLR Preview: what it does today, recorded before the
- * preview and grammar model are rewritten (doc/IN_PROGRESS.md, greenfield plan). Asserts on
+ * preview and grammar model are rewritten (doc/DONE.md, greenfield plan). Asserts on
  * the model (preview state, parse results), not on Swing.
  * <p>
  * Uses grammars-v4 {@code semver}, a parser grammar with {@code tokenVocab} on a separate lexer.
