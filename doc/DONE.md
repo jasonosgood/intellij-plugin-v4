@@ -345,6 +345,17 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     "(skipped)" rows, and input a lexer error dropped "(error)" rows, behind a "Show skipped
     text" toggle (DECISIONS.md, "Skipped text in the Tokens tab"). Prior art: `grun -tokens`,
     ANTLR Lab. Tests: `TokenRowsTest` (plain JUnit), `PreviewPanelTest`.
+58. Preview parses reuse the grammar's prediction cache (verified in the sandbox, 2026-11-17).
+    A one-line query on `oracle_normal.g4` took ~330 ms on every keystroke. Measured: profiling and exact
+    ambiguity detection cost almost nothing (~350 ms plain vs ~315 ms profiled, ~10 ms either
+    way warm); the time was the DFA, which started empty for each new `PreviewParser`
+    (`ParserInterpreter` keeps one per instance). `ParserDfaCache` keeps one ATN, DFA and
+    `PredictionContextCache` per loaded `Grammar` object (weak keys, so a reload starts
+    fresh), as generated parsers share static ones. Now the first parse after a load takes
+    ~310 ms and later ones ~27 ms. The Profiler's numbers describe a warm parser (DFA states
+    accumulate; fewer cache misses). Gating profiling on the Profiler tab was tried and
+    dropped: no measured gain. Tests: `ParserDfaCacheTest` (plain JUnit);
+    `PreviewPerformanceTest` prints cold and warm parse times.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

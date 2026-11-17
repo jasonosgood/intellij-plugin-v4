@@ -214,7 +214,7 @@ public class ParsingUtils {
 
 		tokens.seek(startIndex);
 
-		PreviewParser parser = new PreviewParser(g, tokens);
+		PreviewParser parser = ParserDfaCache.newParser(g, tokens);
 		parser.getInterpreter().setPredictionMode(PredictionMode.LL_EXACT_AMBIG_DETECTION);
 		parser.setProfile(true);
 

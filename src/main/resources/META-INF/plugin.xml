@@ -113,6 +113,9 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	    <li>Fixed: deleting the preview's start rule now falls back to the first rule instead of none.</li>
 	    <li>Fixed: lexer alternatives made only of commands (<code>X : -&gt; skip ;</code>) were reported as syntax errors.</li>
 	    <li>Fixed: with several projects open, saving a grammar in one could refresh another's preview.</li>
+	    <li>Fixed: the preview reparsed slowly on large grammars (about 0.3 s per keystroke on a
+	        1,800-rule grammar); parses now reuse the grammar's prediction cache, so only the first
+	        parse after loading pays that.</li>
 	    <li>Fixed: clicking a row in the Profiler threw an exception.</li>
 	    <li>Fixed: grammar analysis and refactorings no longer freeze the editor on large grammars.</li>
 	    <li>The plugin can be enabled or disabled without restarting the IDE.</li>

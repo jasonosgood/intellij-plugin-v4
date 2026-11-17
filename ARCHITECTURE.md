@@ -153,6 +153,11 @@ Since the preview panel has full control over the interpreter, it can monitor
 the parsing phase to detect potential infinite loops caused by bad grammars,
 thus preventing IDE freezes or OutOfMemoryExceptions.
 
+Preview parsers of one loaded grammar share its prediction cache (`ParserDfaCache`: ATN,
+DFA, `PredictionContextCache`), as instances of a generated parser share static ones. Without
+it every parse starts cold, which on a large grammar is most of the parse time. Every preview
+parse profiles with exact ambiguity detection; measured, that costs little.
+
 [1]: https://github.com/JetBrains/intellij-platform-gradle-plugin
 [2]: https://github.com/antlr/antlr4-intellij-adaptor/
 [3]: https://github.com/antlr/antlr4/blob/master/doc/interpreters.md

@@ -77,9 +77,10 @@ Not on their own:
   item 54); the window is left with the preview's grammar-load errors (`ParsingUtils`), which
   are also editor annotations. Decide whether the preview needs them elsewhere, then delete
   `ToolOutput`. Prior art: build-integrated generators report in the Build tool window.
-- **Profile only when the Profiler tab is shown.** Parsing a one-line query on
-  `oracle_normal.g4` takes ~330 ms, because the preview parses with exact ambiguity detection
-  and profiling on (found in greenfield step 1).
+- **Slow parse on a large grammar. Done** (DONE.md item 58): the cause was a cold prediction
+  cache on every parse, not profiling, so the preview still always profiles. Not done: the
+  lexer's DFA is still per parse (`createLexerInterpreter`); worth sharing the same way if
+  lexing large inputs shows up as slow.
 - **Show that the preview is working.** Loading or parsing a large grammar (`refactorme.g4`,
   `oracle_normal.g4`) takes seconds with no sign of progress, so the plugin looks hung. Prior
   art: the platform's `JBLoadingPanel` (a spinner and "Loading…" over a panel, as in the VCS
