@@ -23,6 +23,9 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   `plugin-linter-api`.
 - Keep the two meta-grammars apart (plugin `ANTLRv4Parser.g4` for the PSI, xl `ANTLR4.g4` for
   the tools); `MetaGrammarAgreementTest` guards against drift. See [doc/DECISIONS.md](doc/DECISIONS.md).
+- The plugin compiles only the antlr4-xl classes listed in `xlTools` (`build.gradle`), plus the
+  parser generated from its meta-grammar. To use another xl class, add it there. Those classes
+  are the plugin's API into xl, so a signature change in them breaks the plugin build.
 - Don't publish personal details (names, emails, home paths) in committed files.
 
 ## Build and run
