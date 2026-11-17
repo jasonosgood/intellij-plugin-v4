@@ -141,6 +141,8 @@ When there are errors, you will see the output in the small console under the in
 
 ![error-popup.png](images/error-popup.png)
 
+Errors in the grammar itself (or in its lexer or an imported grammar) pause the preview: it keeps its last results, dimmed, under a banner naming the file with the errors, and picks up again once they are fixed. The errors are marked in the grammar's editor, and grammars with errors are underlined in the Project view.
+
 With alt-mouse movement, you'll see parse region for rule matching token under cursor. Click and it jumps to grammar definition.
 
 ![parse-region.png](images/parse-region.png)

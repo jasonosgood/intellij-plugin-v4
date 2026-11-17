@@ -37,18 +37,19 @@ Conventions, and where the preview stands:
 - **Placement:** other previews are split editors; ours stays a tool window (DECISIONS.md).
 - **Errors:** pause, don't try. A grammar with errors in the editor is not loaded; the
   preview keeps its last good result dimmed, under an Error banner naming the file (no link:
-  that grammar is open and selected already). It resumes when the errors go. Errors themselves are the editor's (marks)
-  and the build's (Build tool window); the preview only points to them.
+  that grammar is open and selected already). It resumes when the errors go. Errors
+  themselves are the editor's (marks) and the build's (Build tool window); the preview only
+  points to them. Done (step 1).
 - **Messages:** the platform's banner (`EditorNotificationPanel`) at the top of the pane, two
-  sentences at most, at most two actions; not text drawn as a parse tree node.
+  sentences at most, at most two actions; not text drawn as a parse tree node. Done (step 1).
 - **Empty states:** `StatusText` with a reason and one or two links ("No start rule
-  selected"), not a fake tree node.
+  selected"), not a fake tree node. Done (step 1).
 - **Busy:** spinner for work over the delay. Done (DONE.md item 59).
 - **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date
   without saying so. Show "out of date: save to refresh", as Compose does.
 - **Reports:** problems in a file go in the editor, build problems in the Build tool window,
   a balloon only when the user must act. Generate ANTLR Recognizer reports only in a balloon.
-- **Consoles** are for running processes; the Tool Output window goes.
+- **Consoles** are for running processes. The Tool Output window is gone (step 1).
 
 Steps, each checked in the sandbox and committed on its own:
 1. **Pause on errors; remove Tool Output. Done** (DONE.md item 61).
