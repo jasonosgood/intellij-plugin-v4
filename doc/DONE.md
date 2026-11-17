@@ -485,3 +485,13 @@ Compose Preview and SwiftUI previews; the IntelliJ UI guidelines.
     isFileModified`, what the editor tab and Save All go by), fed by a document listener and
     `FileDocumentManagerListener` (saved, reverted, reloaded) as `PreviewListener.unsavedChanged`.
     Prior art: Compose Preview's "out of date" banner. Tests: four in `PreviewPanelTest`.
+63. Generate ANTLR Recognizer reports in the Build tool window (verified in the sandbox,
+    2026-11-17). Each run is one entry ("Generate X.g4") with ANTLR's messages under it, each
+    going to its place in the grammar (`GenerationBuildOutput`, events sent to
+    `BuildViewManager`), and the output directory when it succeeds. The window opens by itself
+    only on failure (the platform's build default); a balloon with "Go to error" only on
+    failure; the status bar otherwise. Uses the platform's event builders, marked
+    experimental (the event implementations are internal), and `FilePosition(Path, …)` (the
+    `File` constructors are deprecated for removal in 2026.2). Prior art: actions running a
+    Gradle or Maven task; the IDE's build output, which shows the JPS builder's ANTLR messages
+    the same way. Tests: three in `GenerationBuildOutputTest`.

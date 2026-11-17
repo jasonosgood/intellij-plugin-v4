@@ -34,13 +34,12 @@ Conventions (those already followed are marked with the DONE.md item):
 - **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date: an
   Info banner says so, with a Save link, as Compose does. (62)
 - **Reports:** problems in a file go in the editor, build problems in the Build tool window,
-  a balloon only when the user must act. Generate ANTLR Recognizer reports only in a balloon.
+  a balloon only when the user must act. (63)
 - **Consoles** are for running processes. The Tool Output window is gone. (61)
 
 Steps, each checked in the sandbox and committed on its own. Done: 1, pause on errors and
-remove Tool Output (DONE.md item 61); 2, out-of-date banner (item 62). Left:
-3. **Generate ANTLR Recognizer reports in the Build tool window** (`BuildViewManager`), with
-   a balloon only on failure, as actions running Gradle or Maven tasks do.
+remove Tool Output (DONE.md item 61); 2, out-of-date banner (item 62); 3, Generate reports in
+the Build tool window (item 63). Left:
 4. **Speed search** in the parse tree, Hierarchy and Tokens tabs, if missing.
 
 ## Left open from saving and code generation

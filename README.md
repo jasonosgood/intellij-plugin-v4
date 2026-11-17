@@ -84,8 +84,10 @@ maybe from another ANTLR version. If your build doesn't generate them, Generate'
 notification offers "Generate anyway".
 
 **On request.** Generate ANTLR Recognizer (ctrl-shift-G / meta-shift-G) runs ANTLR on the
-current grammar, with the same settings, and reports in a notification: where the files went,
-or the errors, with a link to the first one.
+current grammar, with the same settings, and reports in the Build tool window, as the build
+does: ANTLR's errors and warnings (each one goes to its place in the grammar) and where the
+files went. When it fails, the Build window opens and a notification links to the first error;
+otherwise the status bar says it's done.
 
 ## Limitations
 

@@ -111,7 +111,9 @@ parentheses are item numbers in [DONE.md](DONE.md).
   - Known gap: a settings change alone doesn't regenerate; Rebuild Project does.
   - Generate ANTLR Recognizer agrees with the builder: in a Gradle or Maven module it steps
     aside, offering "Generate anyway" since the build tool is known but not whether it applies
-    an ANTLR plugin (54). It reports in a notification, not a console. Prior art: Grammar-Kit.
+    an ANTLR plugin (54). It reports in the Build tool window, like the build, with a balloon
+    only on failure and the status bar otherwise. Prior art: actions running a Gradle or Maven
+    task; the platform's build output (opens the window only on failure). Not a console.
 - **The preview is a tool window, not a split editor (2026-11-17).** IntelliJ's previews
   (Markdown, AsciiDoc, Compose) sit beside the source in a split editor. Ours runs a grammar
   against separate input and shows several result tabs, like tools that evaluate something

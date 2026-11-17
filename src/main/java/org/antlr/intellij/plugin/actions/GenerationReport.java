@@ -9,12 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * What Generate ANTLR Recognizer tells the user after a run: one notification, its title,
- * its text (HTML, as notifications take it) and its severity. Errors in the grammar are also
- * editor annotations; the notification says the run failed and where the first error is.
+ * What Generate ANTLR Recognizer tells the user after a run: its title (the Build tool window's
+ * outcome, and the status bar's or the balloon's title), its severity, and for a failure the
+ * balloon's text (HTML, as notifications take it) and where the first error is. Errors in the
+ * grammar are also editor annotations and Build tool window entries
+ * ({@link GenerationBuildOutput}).
  * <p>
- * Prior art: Grammar-Kit's Generate Parser Code reports in a notification balloon; the build
- * reports ANTLR messages in the Build tool window instead (the JPS builder).
+ * Prior art: actions running a Gradle or Maven task report in the Build tool window and raise
+ * a balloon only on failure.
  */
 public final class GenerationReport {
 	public enum Severity { INFO, WARNING, ERROR }

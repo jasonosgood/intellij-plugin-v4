@@ -1,5 +1,6 @@
 package org.antlr.intellij.plugin.actions;
 
+import com.intellij.build.BuildViewManager;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationType;
@@ -22,6 +23,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.wm.StatusBar;
 import org.antlr.intellij.plugin.format.GrammarFormattingService;
 import org.antlr.intellij.plugin.generation.AntlrGenerator;
 import org.antlr.intellij.plugin.generation.ToolMessage;
@@ -33,7 +35,8 @@ import java.io.IOException;
 import java.util.Collections;
 
 /** Generate parser from ANTLR grammar, for one-offs: builds generate on their own (doc/DECISIONS.md,
- *  "Saving and code generation"). Reports in one notification.
+ *  "Saving and code generation"). Reports in the Build tool window, with a balloon only when the
+ *  run fails and the status bar otherwise, as actions running a Gradle or Maven task do.
  *  Learned how to do from Grammar-Kit by Gregory Shrago.
  */
 public class GenerateParserAction extends AnAction implements DumbAware {
@@ -123,6 +126,7 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 	private static void generate(Project project, VirtualFile grammarFile) {
 		MyActionUtils.saveAllBeforeRunning(project);
 
+		long startTime = System.currentTimeMillis();
 		RunANTLROnGrammarFile gen = new RunANTLROnGrammarFile(grammarFile, project, "ANTLR Code Generation", true);
 		ProgressManager.getInstance().run(gen); // modal: it has finished here
 		AntlrGenerator.Result result = gen.getResult();
@@ -132,8 +136,15 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 		LocalFileSystem.getInstance().refreshIoFiles(Collections.singleton(new File(outputDir)), true, true, null);
 
 		GenerationReport report = GenerationReport.of(grammarFile.getName(), outputDir, result.messages, result.failure);
+		GenerationBuildOutput.report(project.getService(BuildViewManager.class),
+			StringUtil.notNullize(project.getBasePath()), grammarFile.getName(), outputDir, startTime,
+			result.messages, result.failure, report);
+		if ( report.severity!=GenerationReport.Severity.ERROR ) {
+			StatusBar.Info.set(report.title, project);
+			return;
+		}
 		Notification notification = new Notification(GrammarFormattingService.NOTIFICATION_GROUP,
-			report.title, report.content, notificationType(report.severity));
+			report.title, report.content, NotificationType.ERROR);
 		ToolMessage firstError = report.firstError;
 		if ( firstError!=null ) {
 			notification.addAction(NotificationAction.createSimple("Go to error", () -> {
@@ -144,13 +155,5 @@ public class GenerateParserAction extends AnAction implements DumbAware {
 			}));
 		}
 		Notifications.Bus.notify(notification, project);
-	}
-
-	private static NotificationType notificationType(GenerationReport.Severity severity) {
-		return switch ( severity ) {
-			case INFO -> NotificationType.INFORMATION;
-			case WARNING -> NotificationType.WARNING;
-			case ERROR -> NotificationType.ERROR;
-		};
 	}
 }
