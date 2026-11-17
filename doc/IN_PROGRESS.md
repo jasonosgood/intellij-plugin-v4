@@ -81,12 +81,8 @@ Not on their own:
   cache on every parse, not profiling, so the preview still always profiles. Not done: the
   lexer's DFA is still per parse (`createLexerInterpreter`); worth sharing the same way if
   lexing large inputs shows up as slow.
-- **Show that the preview is working.** Loading or parsing a large grammar (`refactorme.g4`,
-  `oracle_normal.g4`) takes seconds with no sign of progress, so the plugin looks hung. Prior
-  art: the platform's `JBLoadingPanel` (a spinner and "Loading…" over a panel, as in the VCS
-  log and diff viewers) and `AsyncProcessIcon` for a small busy marker. Today a parse running
-  past `SLOW_PARSE_NOTICE_DELAY_MS` only enables the Cancel Parse button (`parseSlow`); a
-  grammar load shows nothing.
+- **Show that the preview is working. Done** (DONE.md item 59). Not done: the 500 ms
+  `MergingUpdateQueue` wait before a parse starts shows nothing (it is the typing debounce).
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 - **Sample IntelliJ + ANTLR4 project** (owner, 2026-11-16). A small project to open in the
   sandbox: a grammar, sample inputs, and Java code that uses the generated parser, built by

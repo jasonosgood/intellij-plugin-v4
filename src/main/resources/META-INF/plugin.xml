@@ -116,6 +116,8 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	    <li>Fixed: the preview reparsed slowly on large grammars (about 0.3 s per keystroke on a
 	        1,800-rule grammar); parses now reuse the grammar's prediction cache, so only the first
 	        parse after loading pays that.</li>
+	    <li>New: the preview shows a spinner over its results while a grammar loads or a parse
+	        takes more than a moment, so a large grammar no longer looks hung.</li>
 	    <li>Fixed: clicking a row in the Profiler threw an exception.</li>
 	    <li>Fixed: grammar analysis and refactorings no longer freeze the editor on large grammars.</li>
 	    <li>The plugin can be enabled or disabled without restarting the IDE.</li>

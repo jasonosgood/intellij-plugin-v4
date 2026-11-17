@@ -58,8 +58,10 @@ import java.util.function.UnaryOperator;
 public final class PreviewService implements Disposable {
 	private static final Logger LOG = Logger.getInstance(PreviewService.class);
 
-	/** Delay before offering to cancel a slow parse (the platform's progress postpone time). */
-	private static final int SLOW_PARSE_NOTICE_DELAY_MS = 300;
+	/** Delay before offering to cancel a slow parse, or showing that the preview is busy (the
+	 *  platform's progress postpone time).
+	 */
+	static final int SLOW_PARSE_NOTICE_DELAY_MS = 300;
 
 	private final Project project;
 
@@ -75,6 +77,9 @@ public final class PreviewService implements Disposable {
 
 	/** The running or scheduled parse; EDT only. */
 	private CancellablePromise<?> parsing;
+
+	/** Grammar loads submitted and not finished, through their EDT follow-up; EDT only. */
+	private int loadsRunning;
 
 	/** The latest grammar load, through its EDT follow-up. */
 	private volatile CompletableFuture<?> lastGrammarLoad = CompletableFuture.completedFuture(null);
@@ -271,8 +276,11 @@ public final class PreviewService implements Disposable {
 	 *  this service is disposed.
 	 */
 	private void runGrammarLoad(Supplier<Map<VirtualFile, GrammarCache.Loaded>> load, Runnable thenOnEdt) {
+		ApplicationManager.getApplication().assertIsDispatchThread();
 		if ( lifetime.isDisposed() ) return;
 		AppUIExecutor edt = AppUIExecutor.onUiThread(ModalityState.defaultModalityState()).expireWith(lifetime);
+		loadsRunning++;
+		publisher().busyChanged();
 		lastGrammarLoad = GrammarCache.getInstance(project)
 			.submit(() -> lifetime.isDisposed() ? null : load.get())
 			.thenAcceptAsync(loads -> {
@@ -285,7 +293,21 @@ public final class PreviewService implements Disposable {
 				if ( t!=null && !lifetime.isDisposed() ) { // teardown can break a load midway; ignore that
 					LOG.error("Failed to load grammar", t instanceof CompletionException ? t.getCause() : t);
 				}
+				edt.execute(() -> {
+					loadsRunning--;
+					publisher().busyChanged();
+				});
 			});
+	}
+
+	/** Whether a grammar load is running or waiting to run. EDT only. */
+	public boolean isLoading() {
+		return loadsRunning>0;
+	}
+
+	/** Whether a parse is running or waiting to run. EDT only. */
+	public boolean isParsing() {
+		return parsing!=null && !parsing.isDone();
 	}
 
 	/** Completes once every grammar load requested so far, and its EDT follow-up, has finished. */
@@ -343,6 +365,9 @@ public final class PreviewService implements Disposable {
 		parsing = promise;
 
 		AppUIExecutor edt = AppUIExecutor.onUiThread(ModalityState.defaultModalityState()).expireWith(lifetime);
+		publisher().busyChanged();
+		// done, failed, cancelled or superseded: whichever, the parse is no longer running
+		promise.onProcessed(ignored -> edt.execute(() -> publisher().busyChanged()));
 		AppExecutorUtil.getAppScheduledExecutorService().schedule(
 			() -> edt.execute(() -> { if ( !promise.isDone() ) publisher().parseSlow(); }),
 			SLOW_PARSE_NOTICE_DELAY_MS, TimeUnit.MILLISECONDS);
@@ -356,6 +381,7 @@ public final class PreviewService implements Disposable {
 			parsing.cancel();
 			parsing = null;
 			publisher().parseCancelled();
+			publisher().busyChanged();
 		}
 	}
 

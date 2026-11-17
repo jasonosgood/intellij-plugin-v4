@@ -356,6 +356,16 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     accumulate; fewer cache misses). Gating profiling on the Profiler tab was tried and
     dropped: no measured gain. Tests: `ParserDfaCacheTest` (plain JUnit);
     `PreviewPerformanceTest` prints cold and warm parse times.
+59. The preview shows when it is loading a grammar or parsing. Loading or parsing a large
+    grammar took seconds with no sign of progress. `PreviewService` owns a busy state on the
+    EDT: a grammar load counts from its request (waiting on the loader thread included) until
+    its EDT follow-up ends; a parse from `parse()` until its promise is processed (done,
+    failed, cancelled or superseded). It publishes `PreviewListener.busyChanged`, and
+    `PreviewPanel` covers the result tabs with a `JBLoadingPanel` spinner ("Loading
+    grammar…", "Parsing…") after `SLOW_PARSE_NOTICE_DELAY_MS` (300 ms, the platform's
+    progress postpone time), so quick work doesn't flash it. The input editor and the Cancel
+    button stay usable. Prior art: `JBLoadingPanel` in the VCS log and diff viewer. Tests:
+    `PreviewPanelTest` (parse and grammar load, the load held behind a blocked loader thread).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

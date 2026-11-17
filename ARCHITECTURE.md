@@ -106,6 +106,9 @@ services, which never call the UI:
   every file its load read (the grammar, its lexer, its imports) is unchanged, so a
   save reloads exactly the open grammars it affects.
 - `ToolOutput` buffers the Tool Output console's text until the console exists.
+- **Busy.** `PreviewService.isLoading()`/`isParsing()` say whether a grammar load or a parse
+  is running or waiting; `busyChanged` reports each change. `PreviewPanel` shows them as a
+  `JBLoadingPanel` spinner over the result tabs, after a 300 ms delay.
 
 Editor tab events arrive through `GrammarEditorTabListener` (declared in plugin.xml),
 which turns them into `PreviewService` calls. Everytime the

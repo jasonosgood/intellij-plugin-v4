@@ -38,4 +38,9 @@ public interface PreviewListener {
 
 	/** The user cancelled the running parse. */
 	default void parseCancelled() {}
+
+	/** A grammar load or a parse started or ended: see {@link PreviewService#isLoading} and
+	 *  {@link PreviewService#isParsing}.
+	 */
+	default void busyChanged() {}
 }

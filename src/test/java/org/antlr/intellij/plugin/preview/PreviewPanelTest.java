@@ -31,7 +31,9 @@ import org.antlr.v4.tool.LexerGrammar;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
 import java.util.function.UnaryOperator;
@@ -124,6 +126,46 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		waitFor("reparse", () -> parsingResult(parser).tree.getText().startsWith("2.0.0"));
 		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
 		assertTrue(parsingResult(parser).tree.getText().startsWith("2.0.0"));
+	}
+
+	/** The preview shows it is parsing from the parse's start until its result is in. */
+	public void testParseShowsBusyUntilItFinishes() {
+		select(parser);
+		attachPanel();
+		preview.setStartRule(parser, "semver");
+		assertNull(panel.busyWith());
+		ParsingResult before = parsingResult(parser);
+		preview.parse(parser, "1.0.0");
+		assertTrue(preview.isParsing());
+		assertEquals("Parsing…", panel.busyWith());
+		waitFor("parse", () -> parsingResult(parser)!=before && !preview.isParsing());
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertNull(panel.busyWith());
+	}
+
+	/** The preview shows it is loading from a load's request until its grammars are in, waiting included. */
+	public void testGrammarLoadShowsBusyUntilItFinishes() throws Exception {
+		select(parser);
+		attachPanel();
+		assertFalse(preview.isLoading());
+		CountDownLatch release = new CountDownLatch(1);
+		try {
+			// occupy the loader thread, so the load waits behind this
+			GrammarCache.getInstance(getProject()).submit(() -> {
+				try { release.await(TIMEOUT_S, TimeUnit.SECONDS); }
+				catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+				return null;
+			});
+			preview.grammarSaved(parser); // a load is requested even if nothing changed
+			assertTrue(preview.isLoading());
+			assertEquals("Loading grammar…", panel.busyWith());
+		}
+		finally {
+			release.countDown();
+		}
+		waitForGrammarLoads();
+		assertFalse(preview.isLoading());
+		assertNull(panel.busyWith());
 	}
 
 	public void testChangingStartRuleReparses() {

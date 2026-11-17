@@ -23,6 +23,7 @@ import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.components.JBLoadingPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.util.ui.update.MergingUpdateQueue;
@@ -83,6 +84,12 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	public ProfilerPanel profilerPanel;
 
 	private JBTabbedPane tabbedPane;
+	/** The result tabs, covered by a spinner while a grammar loads or a slow parse runs. */
+	private JBLoadingPanel resultsPanel;
+	/** What {@link #resultsPanel} was asked to show as busy ("Parsing…"), or null; its own
+	 *  {@code isLoading()} turns true only once the spinner appears.
+	 */
+	private @Nullable String busyWith;
 	private TokensPanel tokensPanel;
 
 	private boolean scrollFromSource = false;
@@ -111,6 +118,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		Disposer.register(this, updateQueue);
 
 		project.getMessageBus().connect(this).subscribe(PreviewListener.TOPIC, new PreviewEvents());
+		showBusy(); // a load may have started before this panel existed
 		// Clicks in a grammar editor clear the profiler's decision highlights there
 		EditorFactory.getInstance().getEventMulticaster().addEditorMouseListener(new EditorMouseListener() {
 			@Override
@@ -195,6 +203,27 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			buttonBar.updateActionsAsync();
 			showError("Parsing was aborted");
 		}
+
+		@Override
+		public void busyChanged() {
+			showBusy();
+		}
+	}
+
+	/** Shows whether the preview is loading a grammar or parsing, over the result tabs. The
+	 *  spinner appears only once the work has run {@link PreviewService#SLOW_PARSE_NOTICE_DELAY_MS},
+	 *  so quick loads and parses don't flash it. Prior art: the platform's {@code JBLoadingPanel},
+	 *  as in the VCS log and the diff viewer.
+	 */
+	private void showBusy() {
+		PreviewService service = PreviewService.getInstance(project);
+		busyWith = service.isLoading() ? "Loading grammar…" : service.isParsing() ? "Parsing…" : null;
+		if ( busyWith==null ) {
+			resultsPanel.stopLoading();
+			return;
+		}
+		resultsPanel.setLoadingText(busyWith);
+		resultsPanel.startLoading(); // does nothing if already started
 	}
 
 	private void createGUI() {
@@ -214,7 +243,10 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			}
 		});
 		splitPane.setFirstComponent(inputPanel.getComponent());
-		splitPane.setSecondComponent(createParseTreeAndProfileTabbedPanel());
+		// the input stays usable while the results show that the preview is busy
+		resultsPanel = new JBLoadingPanel(new BorderLayout(), this, PreviewService.SLOW_PARSE_NOTICE_DELAY_MS);
+		resultsPanel.add(createParseTreeAndProfileTabbedPanel(), BorderLayout.CENTER);
+		splitPane.setSecondComponent(resultsPanel);
 
 		this.add(splitPane, BorderLayout.CENTER);
 		this.buttonBar = createButtonBar();
@@ -569,6 +601,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	@TestOnly
 	boolean isTokensTabSelected() {
 		return tabbedPane.getSelectedComponent()==tokensPanel;
+	}
+
+	@TestOnly
+	@Nullable String busyWith() {
+		return busyWith;
 	}
 
 	/** Shows a finished parse; {@code previewState} is the snapshot it was made with. EDT only. */
