@@ -18,6 +18,15 @@ characterization tests; `GrammarCache`; platform async; immutable `PreviewState`
 with `PreviewListener.TOPIC`; routine logging at debug. Lasting constraints are in
 [DECISIONS.md](DECISIONS.md) ("Keep stable").
 
+## Done: speed and feedback on large grammars (2026-11-17)
+Measured on `oracle_normal.g4` (DONE.md, items 58–60; 58 and 60 checked in the sandbox):
+- Preview parses reuse the grammar's prediction cache: ~330 ms per keystroke to ~27 ms.
+- The preview shows a spinner while a grammar loads or a parse runs.
+- The editor highlights with antlr4-xl's lexer, which restarts anywhere: typing is fast, and
+  an edit inside `options { }` no longer turns the rest of the file into errors.
+Tabled: which rule skipped a token (Tokens tab). Lessons are in CLAUDE.md ("Diagnosing
+slowness").
+
 ## Next: saving and code generation (decided 2026-11-15)
 Principle: the plugin never decides when a file is saved, and nothing it does on a save writes
 files the user didn't ask for. Saving follows the platform (⌘S; autosave on idle or when the IDE
@@ -66,13 +75,8 @@ Not on their own:
 
 ## Later: preview UX (after the plugin is stable)
 - **Tokens tab; lexer grammar on its own. Done** (DONE.md item 57). Not done: lexer mode per
-  token (ANTLR Lab shows it; the token doesn't record it), which the next item would give.
-- **Tokens tab: which rule skipped (owner wants this later).** Gap rows say "(skipped)" but
-  not which rule. Instrument the lexer: wrap the `LexerInterpreter` so each match whose type
-  becomes `SKIP` is recorded with its rule (the type `Lexer.nextToken` drops) and span, and
-  show the rule name in the Type column. Would also give lexer modes, and replace the gap
-  inference in `TokenRows`. Prior art to check first: whether ANTLR Lab or the ANTLR v4 VS
-  Code extension shows skipped tokens, and how.
+  token (ANTLR Lab shows it; the token doesn't record it), which the tabled "Tokens tab: which
+  rule skipped" would give.
 - **Remove the Tool Output tool window.** Generate reports in a notification now (DONE.md
   item 54); the window is left with the preview's grammar-load errors (`ParsingUtils`), which
   are also editor annotations. Decide whether the preview needs them elsewhere, then delete
@@ -120,6 +124,12 @@ Not on their own:
   `antlr4.properties` file next to the grammars. Prior art: settings in a plain, checked-in
   file every tool reads (`.editorconfig`, `tsconfig.json`, `.clang-format`). Also makes them
   readable by a JPS builder (B.2) and by the command line.
+- **Tokens tab: which rule skipped** (tabled by the owner, 2026-11-17). Gap rows say
+  "(skipped)" but not which rule. Instrument the lexer: wrap the `LexerInterpreter` so each
+  match whose type becomes `SKIP` is recorded with its rule (the type `Lexer.nextToken` drops)
+  and span, and show the rule name in the Type column. Would also give lexer modes, and
+  replace the gap inference in `TokenRows`. Prior art to check first: whether ANTLR Lab or the
+  ANTLR v4 VS Code extension shows skipped tokens, and how.
 
 ## Before sharing
 - antlr4-xl changes live only in the submodule, branch `plugin-linter-api` (`8ffe462`,

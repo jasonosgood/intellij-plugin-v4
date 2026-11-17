@@ -13,8 +13,9 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 - Commit once the owner has verified a step (or when asked); never push without asking.
 - Temp files go in `tmp/` (git-ignored): scratch files, `launch-sandbox.sh` output, and the
   projects opened in the sandbox IDE (`tmp/jps-spike` for the JPS build, `tmp/tokens-check`
-  for the preview: semver and a grammar with hidden and skipped tokens). Nothing in `/tmp`,
-  the home directory or a session scratchpad.
+  for the preview: semver and a grammar with hidden and skipped tokens; `tmp/oracle-check`, a
+  copy of `oracle_normal.g4`, for speed). Nothing in `/tmp`, the home directory or a session
+  scratchpad.
 - Design from prior art: name the mature systems that solve the problem, follow their standard
   answer, and justify each deviation with a "Prior art" note in code or docs.
 - `antlr4-xl/` is the owner's project with its own rules ([antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md)):
@@ -87,3 +88,20 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 - A preview test that waits for a result compares it by identity with the one before (see
   `typeInput`, `typeInputForTokens` in `PreviewPanelTest`); waiting for "not null" passes on a
   stale result.
+- The editor highlights with antlr4-xl's lexer (`ANTLRv4HighlightingLexer`), not the PSI's.
+  A highlighting lexer must restart correctly at any token: test it with the platform's
+  `LexerTestCase.checkCorrectRestart` (see `ANTLRv4HighlightingLexerTest`).
+- `JBLoadingPanel.isLoading()` turns true only once its spinner shows, after the start delay;
+  test what the panel asked for instead (`PreviewPanel.busyWith`).
+
+## Diagnosing slowness (lessons, 2026-11-17)
+- Measure before fixing. The backlog blamed profiling for slow preview parses; timing the
+  parts showed a cold DFA on every parse (DONE.md item 58). Time with `ANTLR_PERF=1` and
+  `PreviewPerformanceTest`, or a small Java program in `tmp/` against `build/classes`.
+- Slow typing or a sluggish editor: take thread dumps of the sandbox while the owner types
+  (`jcmd <pid> Thread.print` every 250 ms; the IDE runs on JBR, find it with `pgrep -f
+  antlr-sandbox`), count the EDT's top frames, and grep `idea.log` for floods of `STDERR`
+  lines. No "UI was frozen" entries doesn't mean the EDT is idle (DONE.md item 60).
+- Check a premise against the code before planning around it: `ParserInterpreter` keeps its
+  own DFA per instance, unlike generated parsers; `AsyncPromise.onProcessed` runs on success,
+  failure and cancellation alike.
