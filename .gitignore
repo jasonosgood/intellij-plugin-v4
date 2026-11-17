@@ -20,33 +20,9 @@ intellij-plugin-v4.iml
 
 /.intellijPlatform/
 
-# Per-user settings
-# https://intellij-support.jetbrains.com/entries/23393067
-
-.idea/scopes/
-.idea/modules/
-.idea/copyright/
-.idea/libraries/
-.idea/codeStyles/
-.idea/inspectionProfiles/
-
-.idea/ant.xml
-.idea/vcs.xml
-.idea/misc.xml
-.idea/tasks.xml
-.idea/gradle.xml
-.idea/kotlinc.xml
-.idea/modules.xml
-.idea/compiler.xml
-.idea/encodings.xml
-.idea/workspace.xml
-.idea/uiDesigner.xml
-.idea/dbnavigator.xml
-.idea/preferred-vcs.xml
-.idea/codeStyleSettings.xml
-
-
-
+# IntelliJ project files: Gradle is the source of truth and the IDE regenerates them on import.
+# Shared settings belong in IDE-neutral files (.editorconfig; run configurations in .run/).
+/.idea/
 
 # Eclipse metadata and output written by jdtls (the Java language server)
 .classpath
