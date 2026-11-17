@@ -112,6 +112,12 @@ parentheses are item numbers in [DONE.md](DONE.md).
   - Generate ANTLR Recognizer agrees with the builder: in a Gradle or Maven module it steps
     aside, offering "Generate anyway" since the build tool is known but not whether it applies
     an ANTLR plugin (54). It reports in a notification, not a console. Prior art: Grammar-Kit.
+- **The preview is a tool window, not a split editor (2026-11-17).** IntelliJ's previews
+  (Markdown, AsciiDoc, Compose) sit beside the source in a split editor. Ours runs a grammar
+  against separate input and shows several result tabs, like tools that evaluate something
+  against sample input (the JSONPath evaluator, ANTLR Lab), so it keeps its own pane. It
+  follows the other previews otherwise (IN_PROGRESS.md, "the preview behaves like other
+  IntelliJ previews").
 - **Keep stable.** Persisted settings: `ANTLRv4GrammarPropertiesComponent` (`@State
   "ANTLRGenerationPreferences"`) stores per-grammar settings keyed by path; users' stored configs
   must still load, and changing the key needs a migration. Dynamic plugin loading: the verifier

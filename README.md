@@ -200,11 +200,6 @@ Even when a grammar is getting a single interpretation of the input, we often wo
 
 ![Configuration](images/per-file-config.png)
 
-### ANTLR output console
-
-![Output console](images/tool-console.png)
-
-
 ### Color preferences
 
 ![Live preview](images/color-prefs.png)

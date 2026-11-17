@@ -382,6 +382,23 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     (one token each). Neither lexer reports an error on grammars-v4 (1,102 files); a full lex
     of `oracle_normal.g4` takes ~4 ms. Prior art: the platform's separate
     highlighting and parsing lexers. Tests: `ANTLRv4HighlightingLexerTest`.
+61. The preview pauses on grammar errors; the Tool Output window is gone (verified in the
+    sandbox, 2026-11-17). Grammars opt into the platform's problem-file tracking
+    (`GrammarProblemFileFilter`, a `problemFileHighlightFilter`; `WolfTheProblemSolver`), so
+    grammars with errors are underlined in the Project view. Before loading, `PreviewService`
+    checks the grammar and the files its last load read (lexer, imports); with errors it
+    doesn't load, and `ProblemListener` reloads once they go. A load that fails anyway (a
+    grammar never opened, so never checked) records a `LoadProblem` in `GrammarCache.Loaded`
+    and keeps the last good grammars and start rule (before, a failed load lost the start
+    rule). Two cases ANTLR doesn't count as errors get their own reason: a parser grammar's
+    lexer not found, a combined grammar with no lexer rules. `PreviewPanel` shows an Error
+    banner (`EditorNotificationPanel`) over the last results, dimmed and inert; no link to the
+    file, which is open and selected already. Tree-node messages became `StatusText` empty
+    states. ANTLR's messages from the preview's load go to the debug log. Known: with
+    auto-refresh, a load can start before the tracker has the new errors; it fails and pauses
+    the same way. Prior art: Compose Preview, SwiftUI previews; the IntelliJ UI guidelines
+    (Banner, Empty state). Tests: four in `PreviewPanelTest` (the real tracker plugged into
+    the light fixture's stand-in, as the platform's daemon tests do).
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

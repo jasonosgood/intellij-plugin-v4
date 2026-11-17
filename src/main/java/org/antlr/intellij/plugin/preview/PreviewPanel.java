@@ -22,24 +22,26 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.EditorNotificationPanel;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBLoadingPanel;
+import com.intellij.ui.components.JBPanelWithEmptyText;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTabbedPane;
+import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
 import org.antlr.intellij.plugin.actions.MyActionUtils;
 import org.antlr.intellij.plugin.parsing.LexingResult;
+import org.antlr.intellij.plugin.parsing.LoadProblem;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.PreviewParser;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
-import org.antlr.v4.runtime.CommonToken;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.misc.Pair;
-import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
-import org.antlr.v4.runtime.tree.TerminalNodeImpl;
 import org.antlr.v4.runtime.tree.Tree;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -51,6 +53,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Objects;
 
 import static com.intellij.icons.AllIcons.Actions.Find;
 import static com.intellij.icons.AllIcons.General.AutoscrollFromSource;
@@ -86,6 +89,17 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	private JBTabbedPane tabbedPane;
 	/** The result tabs, covered by a spinner while a grammar loads or a slow parse runs. */
 	private JBLoadingPanel resultsPanel;
+	/** Over the result tabs: dims them and takes their clicks while the preview is paused. */
+	private final PausedPane pausedPane = new PausedPane();
+	/** The banner saying why the preview is paused, above everything; empty when it isn't. */
+	private final JPanel bannerHolder = new JPanel(new BorderLayout());
+	/** Why the preview is paused, as shown; null when it isn't. */
+	private @Nullable LoadProblem shownPause;
+	/** The parse tree tab: the tree, or an empty state saying why there's none. */
+	private final CardLayout treeCards = new CardLayout();
+	private final JPanel treeCardPanel = new JPanel(treeCards);
+	private final JBPanelWithEmptyText treeEmpty = new JBPanelWithEmptyText();
+	private static final String TREE_CARD = "tree", EMPTY_CARD = "empty";
 	/** What {@link #resultsPanel} was asked to show as busy ("Parsing…"), or null; its own
 	 *  {@code isLoading()} turns true only once the spinner appears.
 	 */
@@ -201,12 +215,22 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		public void parseCancelled() {
 			cancelParserAction.setEnabled(false);
 			buttonBar.updateActionsAsync();
-			showError("Parsing was aborted");
+			clearTabs("Parse cancelled", null);
 		}
 
 		@Override
 		public void busyChanged() {
 			showBusy();
+		}
+
+		@Override
+		public void pauseChanged() {
+			VirtualFile shown = inputPanel.getGrammarFile();
+			if ( shown==null ) return;
+			boolean wasPaused = shownPause!=null;
+			if ( !showPause(shown) && wasPaused ) {
+				reparseOrClear(PreviewService.getInstance(project).getPreviewState(shown)); // resumed
+			}
 		}
 	}
 
@@ -245,12 +269,70 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		splitPane.setFirstComponent(inputPanel.getComponent());
 		// the input stays usable while the results show that the preview is busy
 		resultsPanel = new JBLoadingPanel(new BorderLayout(), this, PreviewService.SLOW_PARSE_NOTICE_DELAY_MS);
-		resultsPanel.add(createParseTreeAndProfileTabbedPanel(), BorderLayout.CENTER);
+		JLayer<JComponent> results = new JLayer<>(createParseTreeAndProfileTabbedPanel());
+		results.setGlassPane(pausedPane);
+		resultsPanel.add(results, BorderLayout.CENTER);
 		splitPane.setSecondComponent(resultsPanel);
 
-		this.add(splitPane, BorderLayout.CENTER);
+		JPanel main = new JPanel(new BorderLayout());
+		main.add(bannerHolder, BorderLayout.NORTH);
+		main.add(splitPane, BorderLayout.CENTER);
+		this.add(main, BorderLayout.CENTER);
 		this.buttonBar = createButtonBar();
 		this.add(buttonBar.getComponent(), BorderLayout.WEST);
+	}
+
+	/** Shows whether the preview is paused for {@code grammarFile} ({@link PreviewService#getPause}):
+	 *  an Error banner with the reason, over dimmed results that keep the
+	 *  last good parse. Returns whether it is paused. Does nothing if that is already shown.
+	 *  Prior art: Compose Preview and SwiftUI previews; the banner follows the IntelliJ UI
+	 *  guidelines (top of the pane, two sentences at most, at most two actions).
+	 */
+	private boolean showPause(@NotNull VirtualFile grammarFile) {
+		LoadProblem pause = PreviewService.getInstance(project).getPause(grammarFile);
+		if ( Objects.equals(pause, shownPause) ) return pause!=null;
+		shownPause = pause;
+		bannerHolder.removeAll();
+		if ( pause!=null ) {
+			EditorNotificationPanel banner = new EditorNotificationPanel(EditorNotificationPanel.Status.Error);
+			banner.text("Preview paused. " + pause.reason());
+			// no link to the file: the grammar with errors is open in the editor already
+			bannerHolder.add(banner, BorderLayout.CENTER);
+			inputPanel.clearParseErrors(); // they belong to the last parse, not the input as it is
+		}
+		pausedPane.setVisible(pause!=null);
+		bannerHolder.revalidate();
+		bannerHolder.repaint();
+		return pause!=null;
+	}
+
+	@TestOnly
+	@Nullable LoadProblem shownPause() {
+		return shownPause;
+	}
+
+	/** Dims what it covers and takes its mouse events, so stale results can't be clicked. A
+	 *  {@link JLayer}'s glass pane, shown only while the preview is paused.
+	 */
+	private static final class PausedPane extends JPanel {
+		PausedPane() {
+			setOpaque(false);
+			setVisible(false);
+			addMouseListener(new MouseAdapter() {}); // a component with a listener receives the events
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			try {
+				g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
+				g2.setColor(UIUtil.getPanelBackground());
+				g2.fillRect(0, 0, getWidth(), getHeight());
+			}
+			finally {
+				g2.dispose();
+			}
+		}
 	}
 
 	private ActionToolbar createButtonBar() {
@@ -362,7 +444,9 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		Pair<UberTreeViewer, JPanel> pair = createParseTreePanel();
 		treeViewer = pair.a;
 		setupContextMenu(treeViewer);
-		tabbedPane.addTab("Parse tree", pair.b);
+		treeCardPanel.add(pair.b, TREE_CARD);
+		treeCardPanel.add(treeEmpty, EMPTY_CARD);
+		tabbedPane.addTab("Parse tree", treeCardPanel);
 
 		hierarchyViewer = new HierarchyViewer(null);
 		hierarchyViewer.addParsingResultSelectionListener(this);
@@ -437,12 +521,17 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 		inputPanel.grammarFileSaved();
 
-		// reparse if there is a start rule, or retokenize a lexer grammar alone
+		if ( showPause(grammarFile) ) return; // keep the last results, dimmed
+		reparseOrClear(previewState);
+	}
+
+	/** Reparses if there is a start rule, or retokenizes a lexer grammar alone; else blank tabs. */
+	private void reparseOrClear(PreviewState previewState) {
 		if ( (previewState.parserGrammar()!=null && previewState.startRule()!=null) || previewState.isLexerOnly() ) {
 			updateParseTreeFromDoc(previewState.grammarFile());
 		}
 		else {
-			clearTabs(null, null); // blank tree
+			clearTabs(previewState.parserGrammar()!=null ? "No start rule selected" : null, null);
 		}
 	}
 
@@ -454,18 +543,16 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 		inputPanel.switchToGrammar(grammarFile);
 		profilerPanel.switchToGrammar();
+		setEnabled(true);
 
+		if ( showPause(grammarFile) ) {
+			clearTabs(null, null); // the results shown were another grammar's
+			return;
+		}
 		if ( previewState.isLexerOnly() ) {
 			tabbedPane.setSelectedComponent(tokensPanel); // the only tab with anything to show
 		}
-		if ( previewState.startRule()!=null || previewState.isLexerOnly() ) {
-			updateParseTreeFromDoc(grammarFile); // regens tree and profile data
-		}
-		else {
-			clearTabs(null, null); // blank tree
-		}
-
-		setEnabled(true);
+		reparseOrClear(previewState); // regens tree and profile data
 	}
 
 	@Override
@@ -497,20 +584,32 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		inputPanel.closeGrammar(grammarFile);
 	}
 
-	/** Shows {@code tree} (null for none) in the tree tabs and {@code tokens} in the Tokens tab. */
-	private void clearTabs(@Nullable ParseTree tree, @Nullable LexingResult tokens) {
-		ApplicationManager.getApplication().invokeLater(() -> {
+	/** Shows no tree, with {@code emptyText} saying why (null for nothing), and {@code tokens}
+	 *  in the Tokens tab. At once on the EDT, so a tree shown after it stays.
+	 */
+	private void clearTabs(@Nullable String emptyText, @Nullable LexingResult tokens) {
+		UIUtil.invokeLaterIfNeeded(() -> {
 			treeViewer.setRuleNames(Collections.emptyList());
-			treeViewer.setTree(tree);
+			treeViewer.setTree(null);
+			treeEmpty.getEmptyText().setText(emptyText!=null ? emptyText : "");
+			treeCards.show(treeCardPanel, EMPTY_CARD);
 			hierarchyViewer.setTree(null);
 			hierarchyViewer.setRuleNames(Collections.emptyList());
 			tokensPanel.setTokens(tokens);
 		});
 	}
 
+	/** Shows the lexer grammar alone's tokens; it has no parse tree, so the tree tab says so. */
+	private void showTokensOnly(@NotNull LexingResult tokens) {
+		clearTabs("A lexer grammar has no parse tree", tokens);
+		treeEmpty.getEmptyText().appendSecondaryText("Show tokens", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES,
+			e -> tabbedPane.setSelectedComponent(tokensPanel));
+	}
+
 	private void updateTreeViewer(final PreviewState preview, final ParsingResult result) {
 //		long start = System.nanoTime();
 //		System.out.println("START updateTreeViewer "+Thread.currentThread().getName());
+		treeCards.show(treeCardPanel, TREE_CARD);
 		if (result.parser instanceof PreviewParser) {
 			AltLabelTextProvider provider = new AltLabelTextProvider(result.parser, preview.parserGrammar());
 			if(buildTree) {
@@ -542,31 +641,14 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		clearTabs(null, null);
 	}
 
-	private void indicateInvalidGrammarInParseTreePane() {
-		showError("Issues with parser and/or lexer grammar(s) prevent preview; see ANTLR 'Tool Output' pane");
-	}
-
-	private void showError(String message) {
-		clearTabs(messageNode(message), null);
-	}
-
-	private static TerminalNode messageNode(String message) {
-		return new TerminalNodeImpl(new CommonToken(Token.INVALID_TYPE, message));
-	}
-
-	private void indicateNoStartRuleInParseTreePane() {
-		showError("No start rule is selected");
-	}
-
 	public void updateParseTreeFromDoc(VirtualFile grammarFile) {
 		if ( project.isDisposed() ) return;
 		PreviewService service = PreviewService.getInstance(project);
 		PreviewState previewState = service.getPreviewState(grammarFile);
 		LOG.debug("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
+		if ( showPause(grammarFile) ) return; // no parsing while paused
 		if ( (previewState.parserGrammar()==null || previewState.lexerGrammar()==null) && !previewState.isLexerOnly() ) {
-			// likely error in grammar prevents it from loading properly into previewState; bail
-			indicateInvalidGrammarInParseTreePane();
-			return;
+			return; // not loaded yet
 		}
 
 		Editor editor = inputPanel.getInputEditor();
@@ -620,14 +702,14 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			tokensPanel.setTokens(previewState.lexingResult());
 		}
 		else if ( previewState.isLexerOnly() && previewState.lexingResult()!=null ) {
-			clearTabs(messageNode("Lexer grammar: see the Tokens tab"), previewState.lexingResult());
+			showTokensOnly(previewState.lexingResult());
 			inputPanel.showParseErrors(previewState.lexingResult().syntaxErrorListener().getSyntaxErrors());
 		}
 		else if (previewState.startRule() == null) {
-			indicateNoStartRuleInParseTreePane();
+			clearTabs("No start rule selected", null);
 		}
 		else {
-			indicateInvalidGrammarInParseTreePane();
+			clearTabs(null, null); // a parse of grammars that failed to load; the pause says why
 		}
 	}
 

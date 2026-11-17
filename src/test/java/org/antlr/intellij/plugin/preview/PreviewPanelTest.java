@@ -15,6 +15,10 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.codeInsight.daemon.impl.MockWolfTheProblemSolver;
+import com.intellij.codeInsight.daemon.impl.WolfTheProblemSolverImpl;
+import com.intellij.openapi.Disposable;
+import com.intellij.problems.WolfTheProblemSolver;
 import com.intellij.testFramework.PlatformTestUtil;
 import org.antlr.intellij.plugin.GrammarEditorTabListener;
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
@@ -22,6 +26,7 @@ import org.antlr.intellij.plugin.actions.GenerateParserAction;
 import org.antlr.intellij.plugin.actions.TestRuleAction;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
 import org.antlr.intellij.plugin.parsing.LexingResult;
+import org.antlr.intellij.plugin.parsing.LoadProblem;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.psi.ParserRuleSpecNode;
 import org.antlr.v4.runtime.ParserRuleContext;
@@ -329,6 +334,66 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertTrue(missing==null || !"SemanticVersionLexer".equals(missing.name));
 	}
 
+	/** A grammar with errors in the editor isn't loaded; the preview pauses, naming the file,
+	 *  and loads it once the errors go.
+	 */
+	public void testGrammarWithErrorsInTheEditorIsNotLoaded() {
+		WolfTheProblemSolver wolf = realProblemTracker();
+		inBackground(() -> wolf.reportProblemsFromExternalSource(parser, this)); // as highlighting finding errors does
+		assertTrue(wolf.isProblemFile(parser));
+		select(parser);
+		attachPanel();
+		assertNull(preview.getPreviewState(parser).parserGrammar()); // not even tried
+		assertEquals(LoadProblem.errorsIn(parser), panel.shownPause());
+
+		inBackground(() -> wolf.clearProblemsFromExternalSource(parser, this));
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		waitForGrammarLoads();
+		assertEquals("SemanticVersionParser", preview.getPreviewState(parser).parserGrammar().name);
+		assertNull(panel.shownPause());
+	}
+
+	/** Errors in the lexer the parser uses pause the parser's preview too. */
+	public void testErrorsInTheLexerPauseTheParserPreview() {
+		WolfTheProblemSolver wolf = realProblemTracker();
+		select(parser);
+		attachPanel();
+		assertNull(panel.shownPause());
+		inBackground(() -> wolf.reportProblemsFromExternalSource(lexer, this));
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertEquals(LoadProblem.errorsIn(lexer), panel.shownPause());
+		inBackground(() -> wolf.clearProblemsFromExternalSource(lexer, this));
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertNull(panel.shownPause());
+	}
+
+	/** A grammar never checked in the editor can still fail to load: the preview pauses the same way. */
+	public void testGrammarThatFailsToLoadPausesAndResumesWhenFixed() {
+		select(parser);
+		attachPanel();
+		preview.setStartRule(parser, "semver");
+		typeInput("1.2.3");
+		editAndSave(parser, text -> text + "\nbroken : ( ;\n");
+		assertEquals(LoadProblem.errorsIn(parser), panel.shownPause());
+		editAndSave(parser, text -> text.replace("\nbroken : ( ;\n", ""));
+		assertNull(panel.shownPause());
+		assertEquals("semver", ruleName(typeInput("2.0.0")));
+	}
+
+	/** A parser grammar whose lexer can't be found: not an error to ANTLR, so the preview says it. */
+	public void testMissingLexerPausesWithTheReason() throws Exception {
+		select(parser);
+		attachPanel();
+		String lexerPath = lexer.getPath();
+		WriteAction.runAndWait(() -> lexer.delete(this));
+		preview.grammarFilesRemoved(List.of(lexerPath));
+		waitForGrammarLoads();
+		LoadProblem pause = panel.shownPause();
+		assertNotNull(pause);
+		assertEquals("Lexer grammar SemanticVersionLexer.g4 not found.", pause.reason());
+		assertEquals(parser, pause.file());
+	}
+
 	/** Test Rule saves all documents first, as Run does, so an unsaved lexer edit isn't left behind. */
 	public void testTestRuleSavesAllDocuments() {
 		select(lexer);
@@ -497,6 +562,31 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 	// ------------------------------
 
 	/** Edits the grammar's document and leaves it unsaved. */
+	/** Light tests get a stand-in problem-file tracker that tracks nothing; plug in the real one,
+	 *  as the platform's daemon tests do.
+	 */
+	private WolfTheProblemSolver realProblemTracker() {
+		WolfTheProblemSolver wolf = WolfTheProblemSolver.getInstance(getProject());
+		if ( wolf instanceof MockWolfTheProblemSolver mock ) {
+			WolfTheProblemSolver real = WolfTheProblemSolverImpl.createTestInstance(getProject());
+			mock.setDelegate(real);
+			Disposer.register(getTestRootDisposable(), () -> {
+				mock.resetDelegate();
+				if ( real instanceof Disposable d ) Disposer.dispose(d);
+			});
+		}
+		return wolf;
+	}
+
+	/** Runs {@code r} on a pooled thread and waits for it: the tracker reports off the EDT, as
+	 *  highlighting does.
+	 */
+	private static void inBackground(Runnable r) {
+		Future<?> done = com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(r);
+		waitFor("background work", done::isDone);
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+	}
+
 	private Document editWithoutSaving(VirtualFile file, UnaryOperator<String> edit) {
 		Document doc = FileDocumentManager.getInstance().getDocument(file);
 		assertNotNull(doc);

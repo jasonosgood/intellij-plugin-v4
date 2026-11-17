@@ -124,6 +124,12 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	    <li>Fixed: clicking a row in the Profiler threw an exception.</li>
 	    <li>Fixed: grammar analysis and refactorings no longer freeze the editor on large grammars.</li>
 	    <li>The plugin can be enabled or disabled without restarting the IDE.</li>
+	    <li>Changed: when a grammar (or the lexer or a grammar it imports) has errors, the preview
+	        pauses instead of trying: it keeps its last results, dimmed, under a banner naming the
+	        file, and resumes when the errors are fixed. Grammars with errors are underlined in
+	        the Project view.</li>
+	    <li>Removed the Tool Output tool window. Grammar errors show in the editor and, when
+	        building, in the Build tool window.</li>
 	    <li>Removed the ANTLR live templates.</li>
     </ul>
       ]]>
@@ -140,7 +146,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
   <!-- Code generation in the JPS build needs the Java plugin, which runs that build. -->
   <depends optional="true" config-file="antlr-jps.xml">com.intellij.java</depends>
 
-  <!-- PreviewService, GrammarCache and ToolOutput are light project services (@Service), so they aren't listed here. -->
+  <!-- PreviewService and GrammarCache are light project services (@Service), so they aren't listed here. -->
   <projectListeners>
     <listener class="org.antlr.intellij.plugin.GrammarEditorTabListener"
               topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
@@ -199,9 +205,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
       <toolWindow id="ANTLR Preview" anchor="bottom" canCloseContents="true"
                   icon="/icons/org/antlr/intellij/plugin/toolWindowAntlr.svg"
                   factoryClass="org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory"/>
-      <toolWindow id="Tool Output" anchor="bottom" canCloseContents="true"
-                  icon="/icons/org/antlr/intellij/plugin/toolWindowAntlr.svg"
-                  factoryClass="org.antlr.intellij.plugin.ANTLRv4ToolWindowFactory"/>
+      <problemFileHighlightFilter implementation="org.antlr.intellij.plugin.GrammarProblemFileFilter"/>
       <formattingService implementation="org.antlr.intellij.plugin.format.GrammarFormattingService"/>
       <notificationGroup id="ANTLR Grammar Tools" displayType="BALLOON"/>
       <fileType name="ANTLR v4 grammar file" implementationClass="org.antlr.intellij.plugin.ANTLRv4FileType" fieldName="INSTANCE" language="ANTLRv4" extensions="g4"/>

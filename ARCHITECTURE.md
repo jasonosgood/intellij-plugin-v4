@@ -98,9 +98,9 @@ not be executed: `@members`, actions, predicates...
 
 The entry point for the preview window is `PreviewPanel`, which holds the main
 Swing component displayed in the tool window. `ANTLRv4ToolWindowFactory` creates
-it, and the console, when the tool window is first shown; each is disposed with
-its tool window content and owns its editors. The model is in three project
-services, which never call the UI:
+it when the tool window is first shown; it is disposed with its tool window
+content and owns its editors. The model is in two project services, which never
+call the UI:
 - `PreviewService` holds per-grammar preview state (`PreviewState`, an immutable
   snapshot of grammars, start rule, parse result and token stream, replaced on the EDT), keyed by
   `VirtualFile`, and runs parses. It publishes what happens on the project message
@@ -109,7 +109,13 @@ services, which never call the UI:
   and caches them: an entry per grammar file stays valid while the saved text of
   every file its load read (the grammar, its lexer, its imports) is unchanged, so a
   save reloads exactly the open grammars it affects.
-- `ToolOutput` buffers the Tool Output console's text until the console exists.
+- **Paused.** The preview doesn't load or parse a grammar with errors: errors in the editor in
+  the grammar or a file its last load read (the platform's problem-file tracking,
+  `WolfTheProblemSolver`, which grammars opt into with `GrammarProblemFileFilter`), or a load
+  that failed anyway (`GrammarCache.Loaded.problem`, a `LoadProblem`). `PreviewService.getPause`
+  says why; `pauseChanged` reports errors appearing or going. `PreviewPanel` shows an Error
+  banner naming the file over the last results, dimmed. ANTLR's own messages are the editor's
+  and the build's to show; the preview's load logs them at debug.
 - **Busy.** `PreviewService.isLoading()`/`isParsing()` say whether a grammar load or a parse
   is running or waiting; `busyChanged` reports each change. `PreviewPanel` shows them as a
   `JBLoadingPanel` spinner over the result tabs, after a 300 ms delay.

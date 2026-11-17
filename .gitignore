@@ -47,3 +47,10 @@ intellij-plugin-v4.iml
 
 
 
+
+# Eclipse metadata and output written by jdtls (the Java language server)
+.classpath
+.project
+.settings/
+/bin/
+/jps-plugin/bin/

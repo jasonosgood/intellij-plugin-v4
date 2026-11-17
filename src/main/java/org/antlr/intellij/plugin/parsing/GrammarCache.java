@@ -11,8 +11,10 @@ import org.antlr.v4.tool.LexerGrammar;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -51,8 +53,10 @@ import java.util.function.Supplier;
 public final class GrammarCache implements Disposable {
 	/** The grammars loaded from a file; either may be null (lexer alone, or a failed load).
 	 *  {@code inputs}: path of every file read to saved text, null for a file that was absent.
+	 *  {@code problem}: why the grammars can't be previewed, or null if they can.
 	 */
-	public record Loaded(@Nullable LexerGrammar lexer, @Nullable Grammar parser, Map<String, String> inputs) {
+	public record Loaded(@Nullable LexerGrammar lexer, @Nullable Grammar parser, Map<String, String> inputs,
+						 @Nullable LoadProblem problem) {
 		public boolean dependsOn(VirtualFile file) {
 			return inputs.containsKey(file.getPath());
 		}
@@ -94,10 +98,14 @@ public final class GrammarCache implements Disposable {
 		if ( cached!=null && isFresh(cached) ) return cached;
 		ApplicationManager.getApplication().assertIsNonDispatchThread();
 		Map<String, String> inputs = new HashMap<>();
-		Grammar[] grammars = ParsingUtils.loadGrammars(file, project, inputs);
+		List<LoadProblem> problems = new ArrayList<>();
+		Grammar[] grammars = ParsingUtils.loadGrammars(file, project, inputs, problems);
+		// the first problem is the cause; a failed load always has one
+		LoadProblem problem = !problems.isEmpty() ? problems.getFirst()
+			: grammars==null ? LoadProblem.errorsIn(file) : null;
 		Loaded loaded = grammars==null
-			? new Loaded(null, null, Collections.unmodifiableMap(inputs))
-			: new Loaded((LexerGrammar) grammars[0], grammars[1], Collections.unmodifiableMap(inputs));
+			? new Loaded(null, null, Collections.unmodifiableMap(inputs), problem)
+			: new Loaded((LexerGrammar) grammars[0], grammars[1], Collections.unmodifiableMap(inputs), problem);
 		entries.put(file, loaded);
 		return loaded;
 	}

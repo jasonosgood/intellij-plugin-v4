@@ -14,18 +14,23 @@ import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.CheckedDisposable;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.newvfs.BulkFileListener;
 import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
 import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.problems.ProblemListener;
+import com.intellij.problems.WolfTheProblemSolver;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
+import org.antlr.intellij.plugin.parsing.LoadProblem;
 import org.antlr.intellij.plugin.parsing.LexingResult;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.concurrency.CancellablePromise;
 
@@ -92,6 +97,7 @@ public final class PreviewService implements Disposable {
 		// VFS events are application-wide; disconnected when this service is disposed
 		ApplicationManager.getApplication().getMessageBus().connect(this)
 			.subscribe(VirtualFileManager.VFS_CHANGES, new GrammarFileListener());
+		project.getMessageBus().connect(this).subscribe(ProblemListener.TOPIC, new EditorErrorsListener());
 	}
 
 	public static PreviewService getInstance(@NotNull Project project) {
@@ -127,6 +133,69 @@ public final class PreviewService implements Disposable {
 		return project.getMessageBus().syncPublisher(PreviewListener.TOPIC);
 	}
 
+	// ------------------------------ pausing on errors
+
+	/** Why the preview can't show {@code grammarFile} now, or null if it can: errors in the
+	 *  editor in the grammar or a file its last load read (lexer, imports), else the problem its
+	 *  last load had. The preview doesn't load a grammar with errors in the editor, and doesn't
+	 *  parse while paused. Any thread.
+	 *  <p>
+	 *  Prior art: Compose Preview and SwiftUI previews pause while the source has errors, keeping
+	 *  the last result dimmed. Which files have errors comes from the platform's problem-file
+	 *  tracking ({@link WolfTheProblemSolver}, the Project view's red underlines), which grammars
+	 *  opt into with {@code GrammarProblemFileFilter}.
+	 */
+	public @Nullable LoadProblem getPause(@NotNull VirtualFile grammarFile) {
+		LoadProblem inEditor = editorProblem(grammarFile);
+		if ( inEditor!=null ) return inEditor;
+		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
+		return loaded!=null ? loaded.problem() : null;
+	}
+
+	/** The first of {@code grammarFile} and the files its last load read that has errors in the
+	 *  editor, or null. A file never opened has not been checked, so it has none here; loading it
+	 *  finds them. Any thread (the tracker's maps are concurrent).
+	 */
+	private @Nullable LoadProblem editorProblem(@NotNull VirtualFile grammarFile) {
+		WolfTheProblemSolver wolf = WolfTheProblemSolver.getInstance(project);
+		if ( wolf.isProblemFile(grammarFile) ) return LoadProblem.errorsIn(grammarFile);
+		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
+		if ( loaded==null ) return null;
+		for ( Map.Entry<String, String> input : loaded.inputs().entrySet() ) {
+			if ( input.getValue()==null ) continue; // looked for, absent
+			VirtualFile file = LocalFileSystem.getInstance().findFileByPath(input.getKey());
+			if ( file!=null && wolf.isProblemFile(file) ) return LoadProblem.errorsIn(file);
+		}
+		return null;
+	}
+
+	/** Errors appeared in or went from a file in the editor. If the preview uses it, tells the
+	 *  panel ({@link PreviewListener#pauseChanged}); once they're gone, reloads what changed
+	 *  while paused.
+	 */
+	private class EditorErrorsListener implements ProblemListener {
+		@Override
+		public void problemsAppeared(@NotNull VirtualFile file) {
+			onEdt(() -> {
+				if ( isPreviewInput(file) ) publisher().pauseChanged();
+			});
+		}
+
+		@Override
+		public void problemsDisappeared(@NotNull VirtualFile file) {
+			onEdt(() -> {
+				if ( !isPreviewInput(file) ) return;
+				publisher().pauseChanged();
+				grammarSaved(file); // loads only if a saved text changed
+			});
+		}
+
+		private void onEdt(Runnable r) {
+			ApplicationManager.getApplication().invokeLater(r, ModalityState.defaultModalityState(),
+				o -> lifetime.isDisposed());
+		}
+	}
+
 	public boolean isAutoRefresh() {
 		return autoRefresh;
 	}
@@ -155,13 +224,18 @@ public final class PreviewService implements Disposable {
 	}
 
 	/** {@code grammarFile} became the selected grammar: loads it unless its cached grammars are
-	 *  fresh, then publishes {@link PreviewListener#grammarSelected}.
+	 *  fresh or it has errors in the editor, then publishes {@link PreviewListener#grammarSelected}.
 	 */
 	public void grammarSelected(@NotNull VirtualFile grammarFile) {
 		LOG.debug("grammarSelected " + grammarFile.getPath() + " " + project.getName());
 		runGrammarLoad(
-			() -> Map.of(grammarFile, GrammarCache.getInstance(project).get(grammarFile)),
-			() -> publisher().grammarSelected(grammarFile));
+			() -> editorProblem(grammarFile)!=null
+				? Map.of() // paused: don't try
+				: Map.of(grammarFile, GrammarCache.getInstance(project).get(grammarFile)),
+			() -> {
+				previewStates.putIfAbsent(grammarFile, PreviewState.empty(grammarFile)); // previewed, if paused
+				publisher().grammarSelected(grammarFile);
+			});
 	}
 
 	/** {@code grammarFile}'s tab closed: drops its state and cached grammars. EDT only. */
@@ -213,21 +287,22 @@ public final class PreviewService implements Disposable {
 
 	/** A grammar was saved (or may have been: auto-refresh calls this after each highlighting
 	 *  pass). Reloads every previewed grammar whose inputs changed, the saved one first (if it is
-	 *  previewed itself); does nothing if none did. Superseded saves need no bookkeeping: a
-	 *  queued load finds the cache fresh.
+	 *  previewed itself); does nothing if none did. Grammars with errors in the editor wait for
+	 *  them to go ({@link EditorErrorsListener}). Superseded saves need no bookkeeping: a queued
+	 *  load finds the cache fresh.
 	 */
 	public void grammarSaved(@NotNull VirtualFile grammarFile) {
 		runGrammarLoad(
 			() -> {
 				GrammarCache cache = GrammarCache.getInstance(project);
 				// a lexer used by a previewed parser needn't be previewed itself, nor open
-				boolean previewed = previewStates.containsKey(grammarFile);
+				boolean previewed = previewStates.containsKey(grammarFile) && editorProblem(grammarFile)==null;
 				boolean savedStale = previewed && cache.isStale(grammarFile);
 				List<VirtualFile> dependents = previewStates.keySet().stream()
 					.filter(f -> !f.equals(grammarFile))
 					.filter(f -> {
 						GrammarCache.Loaded loaded = cache.peek(f);
-						return loaded!=null && loaded.dependsOn(grammarFile) && cache.isStale(f);
+						return loaded!=null && loaded.dependsOn(grammarFile) && cache.isStale(f) && editorProblem(f)==null;
 					})
 					.toList();
 				if ( !savedStale && dependents.isEmpty() ) {
@@ -285,8 +360,11 @@ public final class PreviewService implements Disposable {
 			.submit(() -> lifetime.isDisposed() ? null : load.get())
 			.thenAcceptAsync(loads -> {
 				if ( loads==null ) return;
-				loads.forEach((file, loaded) ->
-					updatePreviewState(file, s -> s.withGrammars(loaded.lexer(), loaded.parser())));
+				loads.forEach((file, loaded) -> {
+					// a failed load keeps the last good grammars and start rule; the pause says why
+					if ( loaded.lexer()==null && loaded.parser()==null && loaded.problem()!=null ) return;
+					updatePreviewState(file, s -> s.withGrammars(loaded.lexer(), loaded.parser()));
+				});
 				thenOnEdt.run();
 			}, edt::execute)
 			.whenComplete((ignored, t) -> {

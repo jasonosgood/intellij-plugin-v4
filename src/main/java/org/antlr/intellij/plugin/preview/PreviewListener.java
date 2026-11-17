@@ -30,6 +30,9 @@ public interface PreviewListener {
 	/** No grammar is selected any more (its tab closed, or another kind of file came first). */
 	default void grammarDeselected() {}
 
+	/** Errors appeared in or went from a file the preview uses: see {@link PreviewService#getPause}. */
+	default void pauseChanged() {}
+
 	/** A parse is taking long enough to offer cancelling it. */
 	default void parseSlow() {}
 

@@ -1,7 +1,5 @@
 package org.antlr.intellij.plugin.parsing;
 
-import org.antlr.intellij.plugin.ToolOutput;
-import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -246,28 +244,30 @@ public class ParsingUtils {
 
 	/** Get lexer and parser grammars */
 	public static Grammar[] loadGrammars(VirtualFile grammarFile, Project project) {
-		return loadGrammars(grammarFile, project, new HashMap<>());
+		return loadGrammars(grammarFile, project, new HashMap<>(), new ArrayList<>());
 	}
 
 	/** Get lexer and parser grammars, recording in {@code inputs} the saved text of every file
-	 *  the load read (path to text; null for a lexer looked for but absent). See {@link GrammarCache}.
+	 *  the load read (path to text; null for a lexer looked for but absent), and in
+	 *  {@code problems} why the grammars can't be previewed, if they can't. ANTLR's messages go
+	 *  to the debug log only: the editor marks the same errors. See {@link GrammarCache}.
 	 */
-	public static Grammar[] loadGrammars(VirtualFile grammarFile, Project project, Map<String, String> inputs) {
+	public static Grammar[] loadGrammars(VirtualFile grammarFile, Project project, Map<String, String> inputs,
+										 List<LoadProblem> problems) {
 		LOG.debug("loadGrammars "+grammarFile.getPath()+" "+project.getName());
 		Tool antlr = createANTLRToolForLoadingGrammars(getGrammarProperties(project, grammarFile));
 		LoadGrammarsToolListener listener = (LoadGrammarsToolListener)antlr.getListeners().get(0);
 
-		ToolOutput console = ToolOutput.getInstance(project);
 		Grammar g = loadGrammar(grammarFile, antlr, inputs);
 		if (g == null) {
-			reportBadGrammar(grammarFile, console);
+			reportBadGrammar(grammarFile, problems);
 			return null;
 		}
 
 		// see if a lexer is hanging around somewhere; don't want implicit token defs to make us bail
 		LexerGrammar lg = null;
 		if ( g.getType()==ANTLRParser.PARSER ) {
-			lg = loadLexerGrammarFor(g, project, inputs);
+			lg = loadLexerGrammarFor(g, project, inputs, problems);
 			if ( lg!=null ) {
 				g.importVocab(lg);
 			}
@@ -279,8 +279,8 @@ public class ParsingUtils {
 		antlr.process(g, false);
 		recordImports(g, inputs);
 		if ( listener.grammarErrorMessages.size()!=0 ) {
-			String msg = Utils.join(listener.grammarErrorMessages.iterator(), "\n");
-			console.print(msg+"\n", ConsoleViewContentType.ERROR_OUTPUT);
+			LOG.debug("loadGrammars "+grammarFile.getPath()+": "+Utils.join(listener.grammarErrorMessages.iterator(), "\n"));
+			problems.add(LoadProblem.errorsIn(grammarFile));
 			return null; // upon error, bail
 		}
 
@@ -297,9 +297,9 @@ public class ParsingUtils {
 			case ANTLRParser.COMBINED :
 				lg = g.getImplicitLexer();
 				if ( lg==null ) {
-					String msg = "No implicit lexer grammar found in combined grammar " + g.name
-						+ ". Did you mean to declare a `parser grammar` instead?\n";
-					console.print(msg, ConsoleViewContentType.ERROR_OUTPUT);
+					// not an error to ANTLR, so neither the editor nor the build reports it
+					problems.add(new LoadProblem(grammarFile.getName()+" has no lexer rules or literals, " +
+						"so input can't be tokenized. Did you mean a parser grammar?", grammarFile));
 					lg = BAD_LEXER_GRAMMAR;
 				}
 				LOG.debug("loadGrammars combined: "+lg.name+", "+g.name);
@@ -323,9 +323,9 @@ public class ParsingUtils {
 		}
 	}
 
-	private static void reportBadGrammar(VirtualFile grammarFile, ToolOutput console) {
-		String msg = "Empty or bad grammar in file "+grammarFile.getName();
-		console.print(msg+"\n", ConsoleViewContentType.ERROR_OUTPUT);
+	private static void reportBadGrammar(VirtualFile grammarFile, List<LoadProblem> problems) {
+		LOG.debug("loadGrammars: empty or bad grammar in "+grammarFile.getPath());
+		problems.add(LoadProblem.errorsIn(grammarFile));
 	}
 
 	@Nullable
@@ -384,7 +384,8 @@ public class ParsingUtils {
 	 *   	XLexer given XParser.g4 filename or
 	 *     	XLexer given grammar name X
 	 */
-	public static LexerGrammar loadLexerGrammarFor(Grammar g, Project project, Map<String, String> inputs) {
+	public static LexerGrammar loadLexerGrammarFor(Grammar g, Project project, Map<String, String> inputs,
+												   List<LoadProblem> problems) {
 		Tool antlr = createANTLRToolForLoadingGrammars(getGrammarProperties(project, g.fileName));
 		LoadGrammarsToolListener listener = (LoadGrammarsToolListener)antlr.getListeners().get(0);
 		LexerGrammar lg = null;
@@ -405,10 +406,11 @@ public class ParsingUtils {
 				? new File(new File(g.fileName).getParentFile(), vocabName + ".g4").getPath()
 				: getLexerNameFromParserFileName(g.fileName);
 			inputs.putIfAbsent(FileUtil.toSystemIndependentName(lookedFor), null);
+			// not an error to ANTLR (a parser generates without its lexer), so only the preview says it
+			problems.add(new LoadProblem("Lexer grammar " + new File(lookedFor).getName() + " not found.",
+				LocalFileSystem.getInstance().findFileByPath(FileUtil.toSystemIndependentName(g.fileName))));
 		}
 		else {
-			ToolOutput console = ToolOutput.getInstance(project);
-
 			try {
 				lg = (LexerGrammar) loadGrammar(lexerGrammarFile, antlr, inputs);
 				if ( lg!=null ) {
@@ -416,7 +418,7 @@ public class ParsingUtils {
 					recordImports(lg, inputs);
 				}
 				else {
-					reportBadGrammar(lexerGrammarFile, console);
+					reportBadGrammar(lexerGrammarFile, problems);
 				}
 			}
 			catch (ClassCastException cce) {
@@ -431,8 +433,8 @@ public class ParsingUtils {
 			}
 			if ( listener.grammarErrorMessages.size()!=0 ) {
 				lg = null;
-				String msg = Utils.join(listener.grammarErrorMessages.iterator(), "\n");
-				console.print(msg+"\n", ConsoleViewContentType.ERROR_OUTPUT);
+				LOG.debug("loadLexerGrammarFor "+lexerGrammarFile.getPath()+": "+Utils.join(listener.grammarErrorMessages.iterator(), "\n"));
+				problems.add(LoadProblem.errorsIn(lexerGrammarFile));
 			}
 		}
 		return lg;

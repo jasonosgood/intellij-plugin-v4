@@ -27,6 +27,36 @@ Measured on `oracle_normal.g4` (DONE.md, items 58–60; 58 and 60 checked in the
 Tabled: which rule skipped a token (Tokens tab). Lessons are in CLAUDE.md ("Diagnosing
 slowness").
 
+## Now: the preview behaves like other IntelliJ previews (decided 2026-11-17)
+Prior art: Compose Preview (Android Studio) and SwiftUI previews pause on errors and mark stale
+results; Markdown and PlantUML previews; the IntelliJ UI guidelines (plugins.jetbrains.com/docs/
+intellij: Banner, Notification types, Empty state, Progress indicators, Tool window). The
+guidelines say nothing about paused or stale content; Compose and SwiftUI settle that.
+
+Conventions, and where the preview stands:
+- **Placement:** other previews are split editors; ours stays a tool window (DECISIONS.md).
+- **Errors:** pause, don't try. A grammar with errors in the editor is not loaded; the
+  preview keeps its last good result dimmed, under an Error banner naming the file (no link:
+  that grammar is open and selected already). It resumes when the errors go. Errors themselves are the editor's (marks)
+  and the build's (Build tool window); the preview only points to them.
+- **Messages:** the platform's banner (`EditorNotificationPanel`) at the top of the pane, two
+  sentences at most, at most two actions; not text drawn as a parse tree node.
+- **Empty states:** `StatusText` with a reason and one or two links ("No start rule
+  selected"), not a fake tree node.
+- **Busy:** spinner for work over the delay. Done (DONE.md item 59).
+- **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date
+  without saying so. Show "out of date: save to refresh", as Compose does.
+- **Reports:** problems in a file go in the editor, build problems in the Build tool window,
+  a balloon only when the user must act. Generate ANTLR Recognizer reports only in a balloon.
+- **Consoles** are for running processes; the Tool Output window goes.
+
+Steps, each checked in the sandbox and committed on its own:
+1. **Pause on errors; remove Tool Output. Done** (DONE.md item 61).
+2. **Out of date** banner while the grammar or its lexer has unsaved changes.
+3. **Generate ANTLR Recognizer reports in the Build tool window** (`BuildViewManager`), with
+   a balloon only on failure, as actions running Gradle or Maven tasks do.
+4. **Speed search** in the parse tree, Hierarchy and Tokens tabs, if missing.
+
 ## Next: saving and code generation (decided 2026-11-15)
 Principle: the plugin never decides when a file is saved, and nothing it does on a save writes
 files the user didn't ask for. Saving follows the platform (⌘S; autosave on idle or when the IDE
@@ -77,10 +107,6 @@ Not on their own:
 - **Tokens tab; lexer grammar on its own. Done** (DONE.md item 57). Not done: lexer mode per
   token (ANTLR Lab shows it; the token doesn't record it), which the tabled "Tokens tab: which
   rule skipped" would give.
-- **Remove the Tool Output tool window.** Generate reports in a notification now (DONE.md
-  item 54); the window is left with the preview's grammar-load errors (`ParsingUtils`), which
-  are also editor annotations. Decide whether the preview needs them elsewhere, then delete
-  `ToolOutput`. Prior art: build-integrated generators report in the Build tool window.
 - **Slow parse on a large grammar. Done** (DONE.md item 58): the cause was a cold prediction
   cache on every parse, not profiling, so the preview still always profiles. Not done: the
   lexer's DFA is still per parse (`createLexerInterpreter`); worth sharing the same way if
