@@ -33,6 +33,9 @@ public interface PreviewListener {
 	/** Errors appeared in or went from a file the preview uses: see {@link PreviewService#getPause}. */
 	default void pauseChanged() {}
 
+	/** A file the preview uses was edited, saved or reverted: see {@link PreviewService#getUnsavedInput}. */
+	default void unsavedChanged() {}
+
 	/** A parse is taking long enough to offer cancelling it. */
 	default void parseSlow() {}
 

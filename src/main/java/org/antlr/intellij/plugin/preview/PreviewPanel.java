@@ -23,6 +23,7 @@ import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.EditorNotificationPanel;
+import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBLoadingPanel;
@@ -91,10 +92,16 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	private JBLoadingPanel resultsPanel;
 	/** Over the result tabs: dims them and takes their clicks while the preview is paused. */
 	private final PausedPane pausedPane = new PausedPane();
-	/** The banner saying why the preview is paused, above everything; empty when it isn't. */
+	/** The banner saying why the preview is paused or out of date, above everything; empty when
+	 *  it is neither.
+	 */
 	private final JPanel bannerHolder = new JPanel(new BorderLayout());
 	/** Why the preview is paused, as shown; null when it isn't. */
 	private @Nullable LoadProblem shownPause;
+	/** The file whose unsaved changes the preview doesn't show, as shown; null when none (or paused). */
+	private @Nullable VirtualFile shownUnsaved;
+	/** The out-of-date banner's Save link, while it shows. */
+	private @Nullable HyperlinkLabel saveLink;
 	/** The parse tree tab: the tree, or an empty state saying why there's none. */
 	private final CardLayout treeCards = new CardLayout();
 	private final JPanel treeCardPanel = new JPanel(treeCards);
@@ -228,9 +235,15 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			VirtualFile shown = inputPanel.getGrammarFile();
 			if ( shown==null ) return;
 			boolean wasPaused = shownPause!=null;
-			if ( !showPause(shown) && wasPaused ) {
+			if ( !showBanner(shown) && wasPaused ) {
 				reparseOrClear(PreviewService.getInstance(project).getPreviewState(shown)); // resumed
 			}
+		}
+
+		@Override
+		public void unsavedChanged() {
+			VirtualFile shown = inputPanel.getGrammarFile();
+			if ( shown!=null ) showBanner(shown);
 		}
 	}
 
@@ -284,14 +297,21 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 	/** Shows whether the preview is paused for {@code grammarFile} ({@link PreviewService#getPause}):
 	 *  an Error banner with the reason, over dimmed results that keep the
-	 *  last good parse. Returns whether it is paused. Does nothing if that is already shown.
+	 *  last good parse. Else shows whether it is out of date ({@link PreviewService#getUnsavedInput}):
+	 *  an Info banner with a Save link over results left as they are, since they are right for
+	 *  the saved grammar. Returns whether it is paused. Does nothing if that is already shown.
 	 *  Prior art: Compose Preview and SwiftUI previews; the banner follows the IntelliJ UI
 	 *  guidelines (top of the pane, two sentences at most, at most two actions).
 	 */
-	private boolean showPause(@NotNull VirtualFile grammarFile) {
-		LoadProblem pause = PreviewService.getInstance(project).getPause(grammarFile);
-		if ( Objects.equals(pause, shownPause) ) return pause!=null;
+	private boolean showBanner(@NotNull VirtualFile grammarFile) {
+		PreviewService service = PreviewService.getInstance(project);
+		LoadProblem pause = service.getPause(grammarFile);
+		// paused says more: the fix is in the editor, and saving alone won't resume it
+		VirtualFile unsaved = pause==null ? service.getUnsavedInput(grammarFile) : null;
+		if ( Objects.equals(pause, shownPause) && Objects.equals(unsaved, shownUnsaved) ) return pause!=null;
 		shownPause = pause;
+		shownUnsaved = unsaved;
+		saveLink = null;
 		bannerHolder.removeAll();
 		if ( pause!=null ) {
 			EditorNotificationPanel banner = new EditorNotificationPanel(EditorNotificationPanel.Status.Error);
@@ -299,6 +319,13 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			// no link to the file: the grammar with errors is open in the editor already
 			bannerHolder.add(banner, BorderLayout.CENTER);
 			inputPanel.clearParseErrors(); // they belong to the last parse, not the input as it is
+		}
+		else if ( unsaved!=null ) {
+			EditorNotificationPanel banner = new EditorNotificationPanel(EditorNotificationPanel.Status.Info);
+			banner.text("Preview out of date. " + unsaved.getName() + " has unsaved changes.");
+			// the user's own save, so the plugin still doesn't decide when files are saved
+			saveLink = banner.createActionLabel("Save", () -> service.saveInputs(grammarFile));
+			bannerHolder.add(banner, BorderLayout.CENTER);
 		}
 		pausedPane.setVisible(pause!=null);
 		bannerHolder.revalidate();
@@ -309,6 +336,17 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	@TestOnly
 	@Nullable LoadProblem shownPause() {
 		return shownPause;
+	}
+
+	@TestOnly
+	@Nullable VirtualFile shownUnsaved() {
+		return shownUnsaved;
+	}
+
+	/** Clicks the Save link on the out-of-date banner. */
+	@TestOnly
+	void clickSaveOnBanner() {
+		Objects.requireNonNull(saveLink, "no out-of-date banner").doClick();
 	}
 
 	/** Dims what it covers and takes its mouse events, so stale results can't be clicked. A
@@ -521,7 +559,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 		inputPanel.grammarFileSaved();
 
-		if ( showPause(grammarFile) ) return; // keep the last results, dimmed
+		if ( showBanner(grammarFile) ) return; // keep the last results, dimmed
 		reparseOrClear(previewState);
 	}
 
@@ -545,7 +583,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		profilerPanel.switchToGrammar();
 		setEnabled(true);
 
-		if ( showPause(grammarFile) ) {
+		if ( showBanner(grammarFile) ) {
 			clearTabs(null, null); // the results shown were another grammar's
 			return;
 		}
@@ -646,7 +684,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		PreviewService service = PreviewService.getInstance(project);
 		PreviewState previewState = service.getPreviewState(grammarFile);
 		LOG.debug("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
-		if ( showPause(grammarFile) ) return; // no parsing while paused
+		if ( showBanner(grammarFile) ) return; // no parsing while paused
 		if ( (previewState.parserGrammar()==null || previewState.lexerGrammar()==null) && !previewState.isLexerOnly() ) {
 			return; // not loaded yet
 		}

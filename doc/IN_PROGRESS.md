@@ -45,15 +45,16 @@ Conventions, and where the preview stands:
 - **Empty states:** `StatusText` with a reason and one or two links ("No start rule
   selected"), not a fake tree node. Done (step 1).
 - **Busy:** spinner for work over the delay. Done (DONE.md item 59).
-- **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date
-  without saying so. Show "out of date: save to refresh", as Compose does.
+- **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date: an
+  Info banner says so, with a Save link, as Compose does. Done (step 2).
 - **Reports:** problems in a file go in the editor, build problems in the Build tool window,
   a balloon only when the user must act. Generate ANTLR Recognizer reports only in a balloon.
 - **Consoles** are for running processes. The Tool Output window is gone (step 1).
 
 Steps, each checked in the sandbox and committed on its own:
 1. **Pause on errors; remove Tool Output. Done** (DONE.md item 61).
-2. **Out of date** banner while the grammar or its lexer has unsaved changes.
+2. **Out of date banner while the grammar or its lexer has unsaved changes. Done** (DONE.md
+   item 62).
 3. **Generate ANTLR Recognizer reports in the Build tool window** (`BuildViewManager`), with
    a balloon only on failure, as actions running Gradle or Maven tasks do.
 4. **Speed search** in the parse tree, Hierarchy and Tokens tabs, if missing.

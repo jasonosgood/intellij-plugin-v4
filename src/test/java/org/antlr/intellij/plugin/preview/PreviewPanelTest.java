@@ -284,6 +284,58 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertNull(preview.getPreviewState(parser).parserGrammar().getRule("extra"));
 	}
 
+	/** Unsaved changes to the grammar leave the preview out of date, and it says so until saved. */
+	public void testUnsavedEditShowsOutOfDate() {
+		select(parser);
+		attachPanel();
+		assertNull(panel.shownUnsaved());
+		editWithoutSaving(parser, text -> text + "\nextra : NUMBER ;\n");
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertEquals(parser, panel.shownUnsaved());
+
+		save(parser);
+		assertNull(panel.shownUnsaved());
+	}
+
+	/** The lexer the parser uses counts too, open or not. */
+	public void testUnsavedLexerShowsTheParserOutOfDate() {
+		select(parser);
+		attachPanel();
+		editWithoutSaving(lexer, text -> text + "\nTILDE : '~';\n");
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertEquals(lexer, panel.shownUnsaved());
+	}
+
+	/** Save on the banner saves what the preview reads; the save then reloads it, as any does. */
+	public void testSaveOnTheBannerSavesTheGrammar() {
+		select(parser);
+		attachPanel();
+		Document doc = editWithoutSaving(parser, text -> text + "\nextra : NUMBER ;\n");
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		panel.clickSaveOnBanner();
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertFalse(FileDocumentManager.getInstance().isDocumentUnsaved(doc));
+		assertNull(panel.shownUnsaved());
+	}
+
+	/** Paused says more than out of date: errors must be fixed, and a save alone won't resume. */
+	public void testPausedHidesOutOfDate() {
+		WolfTheProblemSolver wolf = realProblemTracker();
+		select(parser);
+		attachPanel();
+		editWithoutSaving(parser, text -> text + "\nextra : NUMBER ;\n");
+		inBackground(() -> wolf.reportProblemsFromExternalSource(parser, this));
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		assertEquals(LoadProblem.errorsIn(parser), panel.shownPause());
+		assertNull(panel.shownUnsaved());
+
+		inBackground(() -> wolf.clearProblemsFromExternalSource(parser, this));
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		waitForGrammarLoads();
+		assertNull(panel.shownPause());
+		assertEquals(parser, panel.shownUnsaved());
+	}
+
 	/** Switching tabs doesn't save: the platform decides when (⌘S, Autosave settings). */
 	public void testSwitchingTabsDoesNotSave() {
 		select(parser);

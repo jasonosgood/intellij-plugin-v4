@@ -399,6 +399,15 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     the same way. Prior art: Compose Preview, SwiftUI previews; the IntelliJ UI guidelines
     (Banner, Empty state). Tests: four in `PreviewPanelTest` (the real tracker plugged into
     the light fixture's stand-in, as the platform's daemon tests do).
+62. The preview says when it is out of date (verified in the sandbox, 2026-11-17). It loads saved
+    text only, so while the grammar or a file its last load read (lexer, imports) has unsaved
+    changes, an Info banner says "Preview out of date. X.g4 has unsaved changes." with a Save
+    link, which saves those files (the user's save; the save reloads as any does). The results
+    stay as they are, not dimmed: they are right for the saved grammar. Paused wins over out of
+    date: the errors must go first. `PreviewService.getUnsavedInput` (`FileDocumentManager.
+    isFileModified`, what the editor tab and Save All go by), fed by a document listener and
+    `FileDocumentManagerListener` (saved, reverted, reloaded) as `PreviewListener.unsavedChanged`.
+    Prior art: Compose Preview's "out of date" banner. Tests: four in `PreviewPanelTest`.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

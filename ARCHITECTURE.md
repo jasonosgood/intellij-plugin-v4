@@ -116,6 +116,11 @@ call the UI:
   says why; `pauseChanged` reports errors appearing or going. `PreviewPanel` shows an Error
   banner naming the file over the last results, dimmed. ANTLR's own messages are the editor's
   and the build's to show; the preview's load logs them at debug.
+- **Out of date.** The preview loads saved text only, so unsaved changes in the grammar or a
+  file its last load read leave it out of date. `PreviewService.getUnsavedInput` names the
+  first such file (`FileDocumentManager.isFileModified`); `unsavedChanged` reports edits,
+  saves and reverts of those files. `PreviewPanel` shows an Info banner with a Save link over
+  the results, which stay as they are. A pause hides it.
 - **Busy.** `PreviewService.isLoading()`/`isParsing()` say whether a grammar load or a parse
   is running or waiting; `busyChanged` reports each change. `PreviewPanel` shows them as a
   `JBLoadingPanel` spinner over the result tabs, after a 300 ms delay.

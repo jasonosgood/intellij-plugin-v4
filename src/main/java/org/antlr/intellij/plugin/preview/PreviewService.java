@@ -7,6 +7,12 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.EditorFactory;
+import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileDocumentManagerListener;
 import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent;
@@ -98,6 +104,10 @@ public final class PreviewService implements Disposable {
 		ApplicationManager.getApplication().getMessageBus().connect(this)
 			.subscribe(VirtualFileManager.VFS_CHANGES, new GrammarFileListener());
 		project.getMessageBus().connect(this).subscribe(ProblemListener.TOPIC, new EditorErrorsListener());
+		UnsavedChangesListener unsaved = new UnsavedChangesListener();
+		EditorFactory.getInstance().getEventMulticaster().addDocumentListener(unsaved, this);
+		ApplicationManager.getApplication().getMessageBus().connect(this)
+			.subscribe(FileDocumentManagerListener.TOPIC, unsaved);
 	}
 
 	public static PreviewService getInstance(@NotNull Project project) {
@@ -158,15 +168,21 @@ public final class PreviewService implements Disposable {
 	 */
 	private @Nullable LoadProblem editorProblem(@NotNull VirtualFile grammarFile) {
 		WolfTheProblemSolver wolf = WolfTheProblemSolver.getInstance(project);
-		if ( wolf.isProblemFile(grammarFile) ) return LoadProblem.errorsIn(grammarFile);
+		return inputFiles(grammarFile).stream().filter(wolf::isProblemFile)
+			.findFirst().map(LoadProblem::errorsIn).orElse(null);
+	}
+
+	/** {@code grammarFile}, then the other files its last load read that exist (lexer, imports). */
+	private @NotNull List<VirtualFile> inputFiles(@NotNull VirtualFile grammarFile) {
+		List<VirtualFile> files = new ArrayList<>(List.of(grammarFile));
 		GrammarCache.Loaded loaded = GrammarCache.getInstance(project).peek(grammarFile);
-		if ( loaded==null ) return null;
+		if ( loaded==null ) return files;
 		for ( Map.Entry<String, String> input : loaded.inputs().entrySet() ) {
 			if ( input.getValue()==null ) continue; // looked for, absent
 			VirtualFile file = LocalFileSystem.getInstance().findFileByPath(input.getKey());
-			if ( file!=null && wolf.isProblemFile(file) ) return LoadProblem.errorsIn(file);
+			if ( file!=null && !files.contains(file) ) files.add(file);
 		}
-		return null;
+		return files;
 	}
 
 	/** Errors appeared in or went from a file in the editor. If the preview uses it, tells the
@@ -193,6 +209,68 @@ public final class PreviewService implements Disposable {
 		private void onEdt(Runnable r) {
 			ApplicationManager.getApplication().invokeLater(r, ModalityState.defaultModalityState(),
 				o -> lifetime.isDisposed());
+		}
+	}
+
+	// ------------------------------ unsaved changes
+
+	/** The first of {@code grammarFile} and the files its last load read (lexer, imports) that
+	 *  has unsaved changes in the editor, or null. The preview loads saved text only, so while
+	 *  one has, the preview is out of date. EDT only.
+	 *  <p>
+	 *  Prior art: Compose Preview says "out of date" while the source has changes it hasn't built,
+	 *  and keeps showing the last result. Unsaved means what the editor tab and Save All mean
+	 *  ({@link FileDocumentManager#isFileModified}).
+	 */
+	public @Nullable VirtualFile getUnsavedInput(@NotNull VirtualFile grammarFile) {
+		FileDocumentManager documents = FileDocumentManager.getInstance();
+		return inputFiles(grammarFile).stream().filter(documents::isFileModified).findFirst().orElse(null);
+	}
+
+	/** Saves the files {@code grammarFile}'s preview reads that have unsaved changes; the save
+	 *  then reloads it, as any save does. For the user's Save on the out-of-date banner. EDT only.
+	 */
+	public void saveInputs(@NotNull VirtualFile grammarFile) {
+		FileDocumentManager documents = FileDocumentManager.getInstance();
+		for ( VirtualFile file : inputFiles(grammarFile) ) {
+			Document doc = documents.getCachedDocument(file);
+			if ( doc!=null && documents.isDocumentUnsaved(doc) ) documents.saveDocument(doc);
+		}
+	}
+
+	/** A file the preview reads was edited, saved, or had its unsaved changes dropped (Reload
+	 *  from Disk): tells the panel ({@link PreviewListener#unsavedChanged}), which shows what
+	 *  {@link #getUnsavedInput} says. Later on the EDT, once the document manager has updated
+	 *  its own record of unsaved documents. Edits arrive once per keystroke; the panel redraws
+	 *  only when the answer changes.
+	 */
+	private class UnsavedChangesListener implements DocumentListener, FileDocumentManagerListener {
+		@Override
+		public void documentChanged(@NotNull DocumentEvent event) {
+			changed(event.getDocument());
+		}
+
+		@Override
+		public void afterDocumentSaved(@NotNull Document document) {
+			changed(document);
+		}
+
+		@Override
+		public void unsavedDocumentDropped(@NotNull Document document) {
+			changed(document);
+		}
+
+		@Override
+		public void fileContentReloaded(@NotNull VirtualFile file, @NotNull Document document) {
+			changed(document);
+		}
+
+		private void changed(Document document) {
+			VirtualFile file = FileDocumentManager.getInstance().getFile(document);
+			if ( file==null || !GrammarFileListener.isGrammar(file.getName()) ) return; // input text, other files
+			ApplicationManager.getApplication().invokeLater(() -> {
+				if ( isPreviewInput(file) ) publisher().unsavedChanged();
+			}, ModalityState.defaultModalityState(), o -> lifetime.isDisposed());
 		}
 	}
 
