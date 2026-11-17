@@ -65,13 +65,6 @@ Not on their own:
   strings today; when adding tests, not as a rewrite.
 
 ## Later: preview UX (after the plugin is stable)
-- **Reload the plugin in a running IDE** (owner, 2026-11-16: tweak the plugin while using it
-  for real work). The plugin is dynamic (the verifier says so), but rebuilding under a running
-  sandbox half-reloads it: stale classes, "Cannot find suitable constructor". That is a failed
-  unload: something still holds a plugin class. Find what (the unload report in `idea.log`; the
-  platform can dump a heap snapshot when an unload fails), fix it, then let
-  `launch-sandbox.sh` rebuild without `--restart`. Prior art: the platform's own dynamic
-  plugin reload, which `runIde` uses for auto-reload.
 - **Lexer grammar on its own.** Previewing `SemanticVersionLexer.g4` shows "Issues with parser
   and/or lexer grammar(s) prevent preview; see ANTLR 'Tool Output' pane", though nothing is
   wrong: the preview needs a parser grammar and there is none (`loadGrammars` returns no parser
@@ -97,6 +90,19 @@ Not on their own:
   ANTLR `antlr4-examples` repo and the platform's sample plugins.
 
 ## Tabled
+- **Plugin reload leaks its class loader** (tabled by the owner, 2026-11-16: the platform's
+  problem). Rebuilding under a running sandbox now reloads the plugin (DONE.md item 56), but
+  the IDE then says "Restart advised: 'ANTLR v4' plugin didn't unload fully": the old class
+  loader stays in memory, one copy per reload, until a restart. Found by bisection
+  (`tmp/unload-test.sh`: restart, reload once, look for the leak warning): any icon from the
+  plugin's jar that was drawn while the IDE started leaks, the tool window `icon=` in
+  plugin.xml as well as `IconLoader.getIcon(path, Icons.class)`, even a blank SVG; with no
+  icons of ours the reload is clean. A copy loaded by an earlier reload unloads cleanly. The
+  platform's snapshot analysis shows a static Caffeine cache keyed by our `CachedImageIcon`;
+  `IconLoader.clearCache()` before unload doesn't reach it. Also: with grammar editors open,
+  the unload logs SEVERE "Trying to access element type from unloaded plugin" from the
+  platform's highlighter and folding updates. If picked up: name the cache and report it on
+  YouTrack with this repro.
 - **2. Extract Rule on lexer rules should create a `fragment`.** Extracting `[0-9]+` from `INT`
   creates a new token rule `NEW_RULE`, which changes how the input is tokenized.
 - **5. Canonicalize.** Decide whether the action rewrites the file or shows a diff view.

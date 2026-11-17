@@ -4,8 +4,8 @@
 # because that IDE's native launcher is killed by macOS (its signature breaks on extraction).
 # Usage: launch-sandbox.sh [--restart] [--no-build] [--no-project | PROJECT_DIR]
 # --restart stops a running sandbox (SIGTERM) and waits for it to exit first. Without it, a
-# running sandbox is an error: rebuilding replaces the plugin jars under it, and the IDE's
-# auto-reload half-unloads the plugin (stale classes, "Cannot find suitable constructor").
+# running sandbox is an error. To reload the plugin in a running sandbox instead, rebuild under
+# it (./gradlew prepareSandbox): the IDE's auto-reload unloads and loads it (see CLAUDE.md).
 # Rebuilds the plugin into the sandbox, regenerates the JVM argfile from the
 # extracted IDE's product-info.json, and starts the IDE in the background.
 # Opens PROJECT_DIR, or by default the sandbox's most recently activated project
@@ -75,8 +75,11 @@ args += [x.strip() for x in open(vmf) if x.strip() and not x.startswith("#") and
 args += ["-Xmx8G",
   f"-Didea.config.path={SB}/config", f"-Didea.system.path={SB}/system",
   f"-Didea.plugins.path={SB}/plugins", f"-Didea.log.path={SB}/log",
-  f"-Dplugin.path={SB}/plugins/intellij-plugin-v4",
-  "-Didea.plugin.in.sandbox.mode=true", "-Didea.required.plugins.id=org.antlr.intellij.plugin",
+  # No -Dplugin.path (runIde passes it): it names a directory idea.plugins.path also scans, so
+  # the IDE held the plugin twice and refused every unload ("was expected not to be loaded but
+  # was included in the module graph"); the old classes then ran against the new jars. Nor
+  # -Didea.required.plugins.id, which only fails startup if the plugin doesn't load.
+  "-Didea.plugin.in.sandbox.mode=true",
   "-Didea.is.internal=true", "-Didea.auto.reload.plugins=true",
   "-Didea.classpath.index.enabled=false", "-Didea.smooth.progress=false",
   f"-javaagent:{ROOT}/.intellijPlatform/coroutines-javaagent.jar"]

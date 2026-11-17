@@ -34,12 +34,14 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   `PreviewPerformanceTest` (load and parse times on `oracle_normal.g4`).
 - Sandbox IDE: `scripts/launch-sandbox.sh [--restart] [--no-build] [--no-project | PROJECT_DIR]`
   (macOS, Apple silicon; ~10 s) or `./gradlew runIde` (anywhere; ~60 s). Its log:
-  `.intellijPlatform/sandbox/intellij-plugin-v4/IU-2026.2.1/log/idea.log`. Never rebuild
-  (`prepareSandbox`) under a running sandbox: the IDE half-reloads the plugin. Use `--restart`.
+  `.intellijPlatform/sandbox/intellij-plugin-v4/IU-2026.2.1/log/idea.log`. Rebuilding
+  (`./gradlew prepareSandbox`) under a running sandbox reloads the plugin in place; each reload
+  leaks the old class loader ("Restart advised", tabled in doc/IN_PROGRESS.md), so restart
+  (`--restart`) when that matters, and before measuring memory or performance.
   The plugin's own traces log at debug: enable `#org.antlr.intellij.plugin` in Help > Diagnostic
   Tools > Debug Log Settings to see them in `idea.log`.
 - `./gradlew verifyPlugin`: Plugin Verifier against the build IDE. It runs `prepareSandbox`
-  (through `buildPlugin`), so the rule above applies: not under a running sandbox.
+  (through `buildPlugin`), so it also reloads the plugin in a running sandbox.
 - Don't edit a project's `.iml` or `.idea` files from outside to set up a sandbox check: the
   sandbox IDE restores module roots from its own cache and writes them back. Change roots in
   the IDE.

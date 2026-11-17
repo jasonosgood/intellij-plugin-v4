@@ -318,6 +318,11 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     says "generated" when ANTLR reported errors, and no longer writes to Tool Output. In a
     Gradle or Maven module (`ExternalBuildOf`, the IDE's side of the builder's `ExternalBuild`)
     it steps aside and offers "Generate anyway". README and change notes updated.
+56. Plugin reload in a running sandbox: `launch-sandbox.sh` passed `-Dplugin.path`, a directory
+    `idea.plugins.path` also scans, so the IDE held the plugin twice and refused every unload;
+    the old classes then ran against the new jars ("Cannot find suitable constructor"). Without
+    it, rebuilding under the sandbox unloads and reloads the plugin. The class loader still
+    leaks through a platform icon cache (tabled, doc/IN_PROGRESS.md).
 55. A.: stray `.tokens` warning. ANTLR reads a `tokenVocab` `.tokens` from `-lib` (default: the
     grammar's directory) before the output directory, so one left there by an older plugin or
     a hand-run `antlr4` shadows the generated one, with possibly stale token types. The
