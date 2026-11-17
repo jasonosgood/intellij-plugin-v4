@@ -12,8 +12,9 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 - **No CI work.** Don't touch `.github/` or `scripts/github_release_notes.py`.
 - Commit once the owner has verified a step (or when asked); never push without asking.
 - Temp files go in `tmp/` (git-ignored): scratch files, `launch-sandbox.sh` output, and the
-  projects opened in the sandbox IDE (`tmp/jps-spike`). Nothing in `/tmp`, the home directory or
-  a session scratchpad.
+  projects opened in the sandbox IDE (`tmp/jps-spike` for the JPS build, `tmp/tokens-check`
+  for the preview: semver and a grammar with hidden and skipped tokens). Nothing in `/tmp`,
+  the home directory or a session scratchpad.
 - Design from prior art: name the mature systems that solve the problem, follow their standard
   answer, and justify each deviation with a "Prior art" note in code or docs.
 - `antlr4-xl/` is the owner's project with its own rules ([antlr4-xl/CLAUDE.md](antlr4-xl/CLAUDE.md)):
@@ -27,7 +28,7 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
 ## Build and run
 - Target: IntelliJ 2026.2.1 (since-build 262), Java 25 toolchain, Gradle 9.7, IntelliJ Platform
   Gradle Plugin 2.x. Clone with `--recurse-submodules` (or `git submodule update --init`).
-- `./gradlew test`: all tests (190, light fixtures plus plain JUnit; 27 are in `jps-plugin`:
+- `./gradlew test`: all tests (204, light fixtures plus plain JUnit; 27 are in `jps-plugin`:
   the generation core shared with the IDE and the code that runs in IntelliJ's build process,
   both Java 11 with no IDE classes). Add `--rerun` to force a
   rerun when Gradle thinks the task is up to date. `ANTLR_PERF=1` also runs
@@ -76,3 +77,10 @@ Branch `grammar-tools` is local and experimental, to be shared publicly later.
   the preview loads must be real files (copy test data to a temp directory), since loading
   checks them through `java.io.File`.
 - Pure logic (Extract Rule planning, lint fixing) is tested without the IDE; prefer that.
+  `TokenRowsTest` builds a `LexerGrammar` from a string, with no files and no IDE.
+- To run some tests, name the root project's task: `./gradlew :test --tests '*PreviewPanelTest'`.
+  Plain `test --tests` also runs `jps-plugin:test`, which fails with "No tests found for given
+  includes" when the filter matches nothing there.
+- A preview test that waits for a result compares it by identity with the one before (see
+  `typeInput`, `typeInputForTokens` in `PreviewPanelTest`); waiting for "not null" passes on a
+  stale result.

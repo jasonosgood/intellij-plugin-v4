@@ -23,6 +23,17 @@ parentheses are item numbers in [DONE.md](DONE.md).
 - **Preview input from a file (33)** never worked; removed (radio buttons, file chooser,
   `PreviewState.inputFile`). Input is typed or pasted. This also drops the verifier's
   experimental `BrowseFolderRunnable` use.
+- **Skipped text in the Tokens tab (2026-11-17).** `-> skip` leaves no token, so `grun
+  -tokens` never shows skipped text; the Tokens tab does, because it is for debugging the
+  lexer (a greedy skip rule eating code, significant whitespace vanishing). Invalid input is
+  skipped too: on a token recognition error the lexer reports the text from the token's start
+  through the character it failed on, drops it and carries on, so it also leaves no token
+  (`Lexer.nextToken`, `recover`). Cheap version: input between tokens becomes "(skipped)"
+  rows, inferred from the gaps; text a lexer error dropped is told apart by the spans
+  `LexerErrorSpans` records, and shown as "(error)".
+  On by default, with a "Show skipped text" toggle (prior art: the PSI Viewer's "show
+  PsiWhiteSpace"). Not known: which rule skipped. The owner wants that later, from an
+  instrumented lexer (IN_PROGRESS.md, "Tokens tab: which rule skipped").
 - **Grammar cache keyed by content, not `CachedValuesManager` (37).** `CachedValuesManager`
   computes inside a read action; loading `oracle_normal.g4` takes ~3 s and ANTLR's `Tool` never
   checks for cancellation, so even a non-blocking read action would block write actions (typing)

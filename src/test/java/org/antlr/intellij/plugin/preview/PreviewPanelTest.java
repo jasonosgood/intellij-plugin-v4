@@ -21,6 +21,7 @@ import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import org.antlr.intellij.plugin.actions.GenerateParserAction;
 import org.antlr.intellij.plugin.actions.TestRuleAction;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
+import org.antlr.intellij.plugin.parsing.LexingResult;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.psi.ParserRuleSpecNode;
 import org.antlr.v4.runtime.ParserRuleContext;
@@ -148,7 +149,6 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertEquals("semver", preview.getPreviewState(parser).startRule());
 	}
 
-	/** Current gap (doc/IN_PROGRESS.md, "Lexer grammar on its own"): no parser, so no preview. */
 	public void testLexerGrammarAloneHasNoParser() {
 		select(lexer);
 		attachPanel();
@@ -156,6 +156,57 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		assertEquals("SemanticVersionLexer", state.lexerGrammar().name);
 		assertNull(state.parserGrammar());
 		assertNull(state.startRule());
+		assertTrue(state.isLexerOnly());
+		assertTrue(panel.isEnabled());
+		assertTrue(panel.isTokensTabSelected());
+	}
+
+	/** A lexer grammar alone is tokenized without a parser, and the Tokens tab lists the tokens. */
+	public void testLexerGrammarAloneTokenizesTheInput() {
+		select(lexer);
+		attachPanel();
+		LexingResult result = typeInputForTokens("1.2.0-RC");
+		assertNull(parsingResult(lexer));
+		assertEquals(List.of("NUMBER", "DOT", "NUMBER", "DOT", "NUMBER", "DASH", "RC", "EOF"), tokenTypes(result));
+		assertTrue(result.syntaxErrorListener().getSyntaxErrors().isEmpty());
+		assertEquals(8, panel.getTokensPanel().getRows().size());
+	}
+
+	public void testLexerErrorsInALexerGrammarAloneAreReported() {
+		select(lexer);
+		attachPanel();
+		LexingResult result = typeInputForTokens("1.2!");
+		assertFalse(result.syntaxErrorListener().getSyntaxErrors().isEmpty());
+		assertEquals(TokenRows.Kind.ERROR, panel.getTokensPanel().getRows().get(3).kind()); // after 1 . 2
+	}
+
+	public void testSkippedTextCanBeHidden() {
+		select(lexer);
+		attachPanel();
+		typeInputForTokens("1.2!");
+		assertEquals(5, panel.getTokensPanel().getRows().size()); // NUMBER DOT NUMBER (error) EOF
+		panel.getTokensPanel().getShowSkipped().doClick();
+		assertEquals(4, panel.getTokensPanel().getRows().size());
+	}
+
+	/** A parse carries the whole token stream, through EOF, even where the parser stopped early. */
+	public void testParseCarriesTheWholeTokenStream() {
+		select(parser);
+		attachPanel();
+		preview.setStartRule(parser, "versionCore"); // stops before the pre-release part
+		typeInput("1.2.3-rc");
+		LexingResult tokens = preview.getPreviewState(parser).lexingResult();
+		assertNotNull(tokens);
+		assertEquals(List.of("NUMBER", "DOT", "NUMBER", "DOT", "NUMBER", "DASH", "RC", "EOF"), tokenTypes(tokens));
+		assertEquals(8, panel.getTokensPanel().getRows().size());
+	}
+
+	public void testSelectingATokenSelectsItsText() {
+		select(lexer);
+		attachPanel();
+		typeInputForTokens("10.20.30");
+		panel.getTokensPanel().getTable().setRowSelectionInterval(2, 2); // the second NUMBER
+		assertEquals("20", panel.getInputPanel().getInputEditor().getSelectionModel().getSelectedText());
 	}
 
 	public void testSavingAGrammarReloadsIt() {
@@ -466,6 +517,25 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 
 	private ParsingResult parsingResult(VirtualFile grammar) {
 		return preview.getPreviewState(grammar).parsingResult();
+	}
+
+	/** Replaces the input text and waits for it to be tokenized (a lexer grammar alone). */
+	private LexingResult typeInputForTokens(String text) {
+		VirtualFile grammar = panel.getInputPanel().getGrammarFile();
+		LexingResult before = preview.getPreviewState(grammar).lexingResult();
+		Document doc = panel.getInputPanel().getInputEditor().getDocument();
+		WriteCommandAction.runWriteCommandAction(getProject(), () -> doc.setText(text));
+		waitFor("tokenizing", () -> {
+			LexingResult now = preview.getPreviewState(grammar).lexingResult();
+			return now!=null && now!=before;
+		});
+		PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+		return preview.getPreviewState(grammar).lexingResult();
+	}
+
+	private static List<String> tokenTypes(LexingResult result) {
+		return TokenRows.rows(result.tokens(), result.vocabulary(), result.channelNames(), result.errorSpans())
+			.stream().filter(r -> r.kind()==TokenRows.Kind.TOKEN).map(TokenRows.Row::type).toList();
 	}
 
 	/** Edits the grammar's document, saves it, and sends the save event (the VFS listener is off in tests). */

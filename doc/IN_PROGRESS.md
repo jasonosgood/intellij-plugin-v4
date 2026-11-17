@@ -65,11 +65,14 @@ Not on their own:
   strings today; when adding tests, not as a rewrite.
 
 ## Later: preview UX (after the plugin is stable)
-- **Lexer grammar on its own.** Previewing `SemanticVersionLexer.g4` shows "Issues with parser
-  and/or lexer grammar(s) prevent preview; see ANTLR 'Tool Output' pane", though nothing is
-  wrong: the preview needs a parser grammar and there is none (`loadGrammars` returns no parser
-  for a lexer grammar). At least say so; better, show the token stream. Prior art: `grun
-  -tokens` (TestRig) and ANTLR Lab both show tokens for a lexer alone.
+- **Tokens tab; lexer grammar on its own. Done** (DONE.md item 57). Not done: lexer mode per
+  token (ANTLR Lab shows it; the token doesn't record it), which the next item would give.
+- **Tokens tab: which rule skipped (owner wants this later).** Gap rows say "(skipped)" but
+  not which rule. Instrument the lexer: wrap the `LexerInterpreter` so each match whose type
+  becomes `SKIP` is recorded with its rule (the type `Lexer.nextToken` drops) and span, and
+  show the rule name in the Type column. Would also give lexer modes, and replace the gap
+  inference in `TokenRows`. Prior art to check first: whether ANTLR Lab or the ANTLR v4 VS
+  Code extension shows skipped tokens, and how.
 - **Remove the Tool Output tool window.** Generate reports in a notification now (DONE.md
   item 54); the window is left with the preview's grammar-load errors (`ParsingUtils`), which
   are also editor annotations. Decide whether the preview needs them elsewhere, then delete
@@ -107,7 +110,8 @@ Not on their own:
   creates a new token rule `NEW_RULE`, which changes how the input is tokenized.
 - **5. Canonicalize.** Decide whether the action rewrites the file or shows a diff view.
 - **6. Offsets.** ANTLR char streams count code points, the editor counts UTF-16 chars, so
-  grammars with characters outside the BMP (emoji) can shift Extract Rule offsets.
+  grammars with characters outside the BMP (emoji) can shift Extract Rule offsets, and
+  input with them shifts the preview's selection from a tree node or a Tokens tab row.
   Pre-existing. (The linter integration already converts its offsets.)
 - **Grammar settings in `antlr4.properties`.** Replace the Configure ANTLR... dialog, whose
   per-grammar settings (output dir, package, language, listener/visitor, lib dir, encoding)

@@ -331,6 +331,20 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     a `.tokens` without its lexer is a supplied vocabulary and is left alone. The build warns;
     Generate asks first, before the Gradle/Maven check: Delete Stray File, Continue Anyway or
     Cancel (owner's call, 2026-11-16).
+57. Preview Tokens tab, and a lexer grammar on its own (verified in the sandbox, 2026-11-17).
+    A lexer grammar alone used to show "Issues with parser and/or lexer grammar(s) prevent
+    preview" though nothing was wrong; now its input is tokenized without a parser
+    (`ParsingUtils.lexText`) and the preview opens on the Tokens tab, the tree tabs saying
+    "Lexer grammar: see the Tokens tab". Every grammar gets the tab: index, type, escaped
+    text, line:col, channel (blank for the default; rows off it greyed); selecting a row
+    selects its text in the input. `LexingResult` sits in `PreviewState` beside
+    `parsingResult`, which keeps always having a parser; a parse fills the token stream to EOF
+    afterwards, so lexer errors past where the parser stopped are now reported, as
+    `grun -tokens` does. Channel names come from the grammar: ANTLR 4.13.2's
+    `createLexerInterpreter` shifts user channels by two. Input between tokens gets
+    "(skipped)" rows, and input a lexer error dropped "(error)" rows, behind a "Show skipped
+    text" toggle (DECISIONS.md, "Skipped text in the Tokens tab"). Prior art: `grun -tokens`,
+    ANTLR Lab. Tests: `TokenRowsTest` (plain JUnit), `PreviewPanelTest`.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.

@@ -21,8 +21,10 @@ import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.antlr.intellij.plugin.parsing.GrammarCache;
+import org.antlr.intellij.plugin.parsing.LexingResult;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
+import org.antlr.v4.runtime.CommonTokenStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.concurrency.CancellablePromise;
@@ -176,7 +178,8 @@ public final class PreviewService implements Disposable {
 	 *  (which reloads only if a saved text changed).
 	 */
 	public void grammarHighlighted(@NotNull VirtualFile grammarFile) {
-		if ( autoRefresh && getPreviewState(grammarFile).startRule()!=null ) {
+		PreviewState state = getPreviewState(grammarFile);
+		if ( autoRefresh && (state.startRule()!=null || state.isLexerOnly()) ) {
 			ApplicationManager.getApplication().invokeLater(() -> grammarSaved(grammarFile), project.getDisposed());
 		}
 	}
@@ -294,9 +297,11 @@ public final class PreviewService implements Disposable {
 	// ------------------------------ parsing
 
 	/** Parses {@code inputText} with the grammar's start rule in the background and publishes
-	 *  the result. A newer parse cancels this one. The parse runs in a non-blocking read action:
+	 *  the result, with the whole token stream; a lexer grammar alone only tokenizes it. A
+	 *  newer parse cancels this one. The parse runs in a non-blocking read action:
 	 *  {@code PreviewParser} checks for cancellation at every decision, so a write action cancels
-	 *  and restarts it rather than waiting for it. Prior art: the platform's threading guide
+	 *  and restarts it rather than waiting for it (lexing doesn't check, but is linear and
+	 *  quick). Prior art: the platform's threading guide
 	 *  ({@code ReadAction.nonBlocking} with {@code coalesceBy}, {@code expireWith},
 	 *  {@code finishOnUiThread}).
 	 *  <p>
@@ -314,15 +319,23 @@ public final class PreviewService implements Disposable {
 		CancellablePromise<Parse> promise = ReadAction
 			.nonBlocking(() -> {
 				long start = System.nanoTime();
+				if ( snapshot.isLexerOnly() ) {
+					LexingResult lexed = ParsingUtils.lexText(snapshot.lexerGrammar(), grammarFile, inputText, project);
+					return new Parse(null, lexed, System.nanoTime() - start);
+				}
 				ParsingResult result = ParsingUtils.parseText(snapshot.parserGrammar(), snapshot.lexerGrammar(),
 															  snapshot.startRule(), grammarFile, inputText, project);
-				return new Parse(result, System.nanoTime() - start);
+				long nanos = System.nanoTime() - start; // the parse alone, as the profiler reports it
+				LexingResult lexed = result==null ? null
+					: LexingResult.of((CommonTokenStream) result.parser.getInputStream(), result.syntaxErrorListener,
+									  snapshot.lexerGrammar());
+				return new Parse(result, lexed, nanos);
 			})
 			.coalesceBy(this) // one parse at a time; the newest input wins
 			.expireWith(lifetime)
 			.finishOnUiThread(ModalityState.defaultModalityState(), parse -> {
 				if ( !getPreviewState(grammarFile).sameInputsAs(snapshot) ) return; // superseded
-				PreviewState parsed = snapshot.withParsingResult(parse.result());
+				PreviewState parsed = snapshot.withResults(parse.result(), parse.tokens());
 				previewStates.put(grammarFile, parsed);
 				publisher().parseCompleted(parsed, parse.nanos());
 			})
@@ -335,7 +348,7 @@ public final class PreviewService implements Disposable {
 			SLOW_PARSE_NOTICE_DELAY_MS, TimeUnit.MILLISECONDS);
 	}
 
-	private record Parse(ParsingResult result, long nanos) {}
+	private record Parse(ParsingResult result, LexingResult tokens, long nanos) {}
 
 	/** Cancels the running parse, if any. EDT only. */
 	public void cancelParse() {

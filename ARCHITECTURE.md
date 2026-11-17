@@ -98,7 +98,7 @@ it, and the console, when the tool window is first shown; each is disposed with
 its tool window content and owns its editors. The model is in three project
 services, which never call the UI:
 - `PreviewService` holds per-grammar preview state (`PreviewState`, an immutable
-  snapshot of grammars, start rule and parse result, replaced on the EDT), keyed by
+  snapshot of grammars, start rule, parse result and token stream, replaced on the EDT), keyed by
   `VirtualFile`, and runs parses. It publishes what happens on the project message
   bus (`PreviewListener.TOPIC`); `PreviewPanel` subscribes with its own disposable.
 - `GrammarCache` loads grammars, in order on one background thread without a read lock,
@@ -118,6 +118,36 @@ in graphical form and in JTree form).
 
 `PreviewPanel` acts as an orchestrator between inputs (grammar changed event,
 input text changed event) and outputs (profiler, token list, parse tree etc.).
+
+### Tokens tab and lexer grammars alone
+
+- **Two results.** `PreviewState.parsingResult` (a `ParsingResult`) always has a parser: the
+  profiler, the ambiguity dialog and the input hovers rely on that. The token stream is a
+  separate `LexingResult` beside it, set by every parse, so a lexer grammar alone can have
+  tokens without a parse. Add new kinds of result beside the others rather than making a
+  field of an existing one nullable.
+- **Telling a lexer grammar alone apart.** `ParsingUtils.loadGrammars` returns `{lexer,
+  null}` for a lexer grammar and `null` (both grammars null in the state) when a grammar
+  fails to load; a parser whose lexer is missing gets `BAD_LEXER_GRAMMAR`. Use
+  `PreviewState.isLexerOnly()`, not `parserGrammar()==null`. A lexer grammar has no start
+  rule, so code that checks `startRule()!=null` to decide whether to parse must also accept
+  `isLexerOnly()`; `PreviewService.parse` then tokenizes with `ParsingUtils.lexText` instead.
+- **The whole stream.** A parser reads tokens only as far as it gets; after the parse,
+  `LexingResult.of` fills the stream to EOF, so the tab shows every token. That also lexes
+  (and reports errors in) input past where the parser stopped.
+- **Text that left no token.** `-> skip` drops a match inside the lexer; so does a token
+  recognition error, which reports the text and carries on. Both leave a gap between
+  tokens' character indexes. `TokenRows` turns gaps into "(skipped)" rows, and the spans
+  recorded by `LexerErrorSpans` (an error listener every preview lexer gets in
+  `ParsingUtils.createLexer`) into "(error)" rows. Which rule skipped isn't known: the lexer
+  forgets the type once the action sets it to `SKIP` (doc/IN_PROGRESS.md has the plan).
+- **ANTLR 4.13.2 channel names.** `Grammar.createLexerInterpreter` gives the interpreter
+  `DEFAULT_TOKEN_CHANNEL`, `HIDDEN`, then `channelValueToNameList`, which is already indexed
+  by channel number, so `getChannelNames()` puts user channels two places late. Read channel
+  names from the grammar (`LexingResult.channelNames`).
+- **Offsets.** Token indexes count code points; the editor counts UTF-16 chars. Selecting
+  a token (or a tree node) in the input is off after a character outside the BMP (tabled in
+  doc/IN_PROGRESS.md, "Offsets").
 
 Since the preview panel has full control over the interpreter, it can monitor
 the parsing phase to detect potential infinite loops caused by bad grammars,

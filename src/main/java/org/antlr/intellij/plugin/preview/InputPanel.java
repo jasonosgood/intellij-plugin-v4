@@ -56,6 +56,7 @@ public class InputPanel {
 	private static final int TOKEN_INFO_LAYER = HighlighterLayer.SELECTION; // Show token info over errors
 	private static final int ERROR_LAYER = HighlighterLayer.ERROR;
 	private static final String missingStartRuleLabelText = "%s start rule: <select from navigator or grammar>";
+	private static final String lexerGrammarLabelText = "%s: lexer grammar, tokens only";
 	private static final String startRuleLabelText = "%s start rule: %s";
 
 	private JTextArea placeHolder;
@@ -156,13 +157,7 @@ public class InputPanel {
 
 	public void grammarFileSaved() {
 		clearParseErrors();
-		PreviewState previewState = previewState();
-		if ( previewState!=null && previewState.startRule()!=null ) {
-			setStartRuleName(previewState.grammarFile(), previewState.startRule());
-		}
-		else {
-			resetStartRuleLabel();
-		}
+		updateStartRuleLabel(previewState());
 	}
 
 	/** Shows {@code grammarFile}'s input in a new editor; the previous grammar's text is kept. */
@@ -176,9 +171,18 @@ public class InputPanel {
 
 		clearParseErrors();
 
-		String startRule = PreviewService.getInstance(previewPanel.project).getPreviewState(grammarFile).startRule();
-		if ( startRule!=null ) {
-			setStartRuleName(grammarFile, startRule);
+		updateStartRuleLabel(PreviewService.getInstance(previewPanel.project).getPreviewState(grammarFile));
+	}
+
+	/** Shows {@code previewState}'s start rule, or that a lexer grammar has none, or that one is missing. */
+	private void updateStartRuleLabel(@Nullable PreviewState previewState) {
+		if ( previewState!=null && previewState.startRule()!=null ) {
+			setStartRuleName(previewState.grammarFile(), previewState.startRule());
+		}
+		else if ( previewState!=null && previewState.isLexerOnly() ) {
+			startRuleLabel.setText(String.format(lexerGrammarLabelText, previewState.grammarFile().getName()));
+			startRuleLabel.setForeground(JBColor.foreground());
+			startRuleLabel.setIcon(Icons.FILE);
 		}
 		else {
 			resetStartRuleLabel();

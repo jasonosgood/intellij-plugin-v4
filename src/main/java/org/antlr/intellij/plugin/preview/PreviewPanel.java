@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.SelectionModel;
 import com.intellij.openapi.editor.event.EditorMouseEvent;
 import com.intellij.openapi.editor.event.EditorMouseListener;
@@ -27,6 +28,7 @@ import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.util.ui.update.MergingUpdateQueue;
 import com.intellij.util.ui.update.Update;
 import org.antlr.intellij.plugin.actions.MyActionUtils;
+import org.antlr.intellij.plugin.parsing.LexingResult;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.PreviewParser;
 import org.antlr.intellij.plugin.profiler.ProfilerPanel;
@@ -79,6 +81,9 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	public HierarchyViewer hierarchyViewer;
 
 	public ProfilerPanel profilerPanel;
+
+	private JBTabbedPane tabbedPane;
+	private TokensPanel tokensPanel;
 
 	private boolean scrollFromSource = false;
 	private boolean highlightSource = false;
@@ -319,7 +324,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 
 	private JTabbedPane createParseTreeAndProfileTabbedPanel() {
-		JBTabbedPane tabbedPane = new JBTabbedPane();
+		tabbedPane = new JBTabbedPane();
 
 		LOG.debug("createParseTreePanel" + " " + project.getName());
 		Pair<UberTreeViewer, JPanel> pair = createParseTreePanel();
@@ -333,6 +338,9 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 		profilerPanel = new ProfilerPanel(project, this);
 		tabbedPane.addTab("Profiler", profilerPanel.getComponent());
+
+		tokensPanel = new TokensPanel(row -> selectInputText(row.startIndex(), row.stopIndex()));
+		tabbedPane.addTab("Tokens", tokensPanel);
 
 		return tabbedPane;
 	}
@@ -397,13 +405,12 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 		inputPanel.grammarFileSaved();
 
-		// if the saved grammar is not a pure lexer and there is a start rule, reparse
-		// means that switching grammars must refresh preview
-		if ( previewState.parserGrammar()!=null && previewState.startRule()!=null ) {
+		// reparse if there is a start rule, or retokenize a lexer grammar alone
+		if ( (previewState.parserGrammar()!=null && previewState.startRule()!=null) || previewState.isLexerOnly() ) {
 			updateParseTreeFromDoc(previewState.grammarFile());
 		}
 		else {
-			clearTabs(null); // blank tree
+			clearTabs(null, null); // blank tree
 		}
 	}
 
@@ -416,14 +423,17 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		inputPanel.switchToGrammar(grammarFile);
 		profilerPanel.switchToGrammar();
 
-		if ( previewState.startRule()!=null ) {
+		if ( previewState.isLexerOnly() ) {
+			tabbedPane.setSelectedComponent(tokensPanel); // the only tab with anything to show
+		}
+		if ( previewState.startRule()!=null || previewState.isLexerOnly() ) {
 			updateParseTreeFromDoc(grammarFile); // regens tree and profile data
 		}
 		else {
-			clearTabs(null); // blank tree
+			clearTabs(null, null); // blank tree
 		}
 
-		setEnabled(previewState.parserGrammar()!=null || previewState.lexerGrammar()==null);
+		setEnabled(true);
 	}
 
 	@Override
@@ -455,12 +465,14 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		inputPanel.closeGrammar(grammarFile);
 	}
 
-	private void clearTabs(@Nullable ParseTree tree) {
+	/** Shows {@code tree} (null for none) in the tree tabs and {@code tokens} in the Tokens tab. */
+	private void clearTabs(@Nullable ParseTree tree, @Nullable LexingResult tokens) {
 		ApplicationManager.getApplication().invokeLater(() -> {
 			treeViewer.setRuleNames(Collections.emptyList());
 			treeViewer.setTree(tree);
 			hierarchyViewer.setTree(null);
 			hierarchyViewer.setRuleNames(Collections.emptyList());
+			tokensPanel.setTokens(tokens);
 		});
 	}
 
@@ -495,7 +507,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 
 	void clearParseTree() {
-		clearTabs(null);
+		clearTabs(null, null);
 	}
 
 	private void indicateInvalidGrammarInParseTreePane() {
@@ -503,7 +515,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	}
 
 	private void showError(String message) {
-		clearTabs(new TerminalNodeImpl(new CommonToken(Token.INVALID_TYPE, message)));
+		clearTabs(messageNode(message), null);
+	}
+
+	private static TerminalNode messageNode(String message) {
+		return new TerminalNodeImpl(new CommonToken(Token.INVALID_TYPE, message));
 	}
 
 	private void indicateNoStartRuleInParseTreePane() {
@@ -515,7 +531,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		PreviewService service = PreviewService.getInstance(project);
 		PreviewState previewState = service.getPreviewState(grammarFile);
 		LOG.debug("updateParseTreeFromDoc "+grammarFile+" rule "+previewState.startRule());
-		if ( previewState.parserGrammar()==null || previewState.lexerGrammar()==null ) {
+		if ( (previewState.parserGrammar()==null || previewState.lexerGrammar()==null) && !previewState.isLexerOnly() ) {
 			// likely error in grammar prevents it from loading properly into previewState; bail
 			indicateInvalidGrammarInParseTreePane();
 			return;
@@ -545,6 +561,16 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		return inputPanel;
 	}
 
+	@TestOnly
+	TokensPanel getTokensPanel() {
+		return tokensPanel;
+	}
+
+	@TestOnly
+	boolean isTokensTabSelected() {
+		return tabbedPane.getSelectedComponent()==tokensPanel;
+	}
+
 	/** Shows a finished parse; {@code previewState} is the snapshot it was made with. EDT only. */
 	private void onParsingCompleted(PreviewState previewState, long duration) {
 		cancelParserAction.setEnabled(false);
@@ -554,6 +580,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 			updateTreeViewer(previewState, previewState.parsingResult());
 			profilerPanel.setProfilerData(previewState, duration);
 			inputPanel.showParseErrors(previewState.parsingResult().syntaxErrorListener.getSyntaxErrors());
+			tokensPanel.setTokens(previewState.lexingResult());
+		}
+		else if ( previewState.isLexerOnly() && previewState.lexingResult()!=null ) {
+			clearTabs(messageNode("Lexer grammar: see the Tokens tab"), previewState.lexingResult());
+			inputPanel.showParseErrors(previewState.lexingResult().syntaxErrorListener().getSyntaxErrors());
 		}
 		else if (previewState.startRule() == null) {
 			indicateNoStartRuleInParseTreePane();
@@ -593,11 +624,19 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		// It also looks like previous code was triggering an update to hierarchy view when we
 		// click in input pane which then tried to select entire token like a string. Now,
 		// text is selected in input pane only when a mouse event occurs in hierarchy pane.
+		selectInputText(startIndex, stopIndex);
+	}
+
+	/** Selects the input text from {@code startIndex} to {@code stopIndex} inclusive, if the
+	 *  input still has it, and scrolls to it. The caret stays, so scroll-from-source isn't set off.
+	 */
+	private void selectInputText(int startIndex, int stopIndex) {
 		Editor editor = inputPanel.getInputEditor();
-		if ( startIndex>=0 && stopIndex+1 <= editor.getDocument().getTextLength() ) {
+		if ( editor!=null && startIndex>=0 && stopIndex+1 <= editor.getDocument().getTextLength() ) {
 			SelectionModel selectionModel = editor.getSelectionModel();
 			selectionModel.removeSelection();
 			selectionModel.setSelection(startIndex, stopIndex + 1);
+			editor.getScrollingModel().scrollTo(editor.offsetToLogicalPosition(startIndex), ScrollType.MAKE_VISIBLE);
 		}
 	}
 }

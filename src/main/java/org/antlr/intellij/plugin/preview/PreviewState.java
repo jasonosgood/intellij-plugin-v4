@@ -1,6 +1,7 @@
 package org.antlr.intellij.plugin.preview;
 
 import com.intellij.openapi.vfs.VirtualFile;
+import org.antlr.intellij.plugin.parsing.LexingResult;
 import org.antlr.intellij.plugin.parsing.ParsingResult;
 import org.antlr.intellij.plugin.parsing.ParsingUtils;
 import org.antlr.v4.tool.Grammar;
@@ -23,7 +24,10 @@ import java.util.Objects;
  *  @param lexerGrammar the lexer grammar, separate or from a combined grammar; null before loading
  *  @param startRule the rule parses start from; null if the grammar has no parser rules
  *  @param parsingResult the last parse, made with exactly these grammars and start rule; null
- *                       until one finishes
+ *                       until one finishes, and always for a lexer grammar alone
+ *  @param lexingResult the tokens of the last parse, or of the last tokenizing for a lexer
+ *                      grammar alone; null until one finishes. Kept apart from {@code
+ *                      parsingResult} so that one always has a parser.
  *  @param renamedStartRule the start rule's new name after a rename refactoring; it becomes the
  *                          start rule once grammars that have it load (the preview reloads on
  *                          save only, so the loaded grammars still have the old name)
@@ -33,11 +37,12 @@ public record PreviewState(@NotNull VirtualFile grammarFile,
 						   @Nullable LexerGrammar lexerGrammar,
 						   @Nullable String startRule,
 						   @Nullable ParsingResult parsingResult,
+						   @Nullable LexingResult lexingResult,
 						   @Nullable String renamedStartRule)
 {
 	/** A grammar not loaded yet. */
 	public static PreviewState empty(@NotNull VirtualFile grammarFile) {
-		return new PreviewState(grammarFile, null, null, null, null, null);
+		return new PreviewState(grammarFile, null, null, null, null, null, null);
 	}
 
 	/** Newly loaded grammars. The start rule becomes its new name if it was renamed and the
@@ -46,24 +51,29 @@ public record PreviewState(@NotNull VirtualFile grammarFile,
 	 */
 	public PreviewState withGrammars(@Nullable LexerGrammar lexer, @Nullable Grammar parser) {
 		if ( renamedStartRule!=null && parser!=null && parser.getRule(renamedStartRule)!=null ) {
-			return new PreviewState(grammarFile, parser, lexer, renamedStartRule, null, null);
+			return new PreviewState(grammarFile, parser, lexer, renamedStartRule, null, null, null);
 		}
-		return new PreviewState(grammarFile, parser, lexer, startRuleIn(parser, startRule), null, renamedStartRule);
+		return new PreviewState(grammarFile, parser, lexer, startRuleIn(parser, startRule), null, null, renamedStartRule);
 	}
 
 	/** A start rule the user chose; the old parse result belonged to the old start rule. */
 	public PreviewState withStartRule(@Nullable String rule) {
-		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, rule, null, null);
+		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, rule, null, null, null);
 	}
 
 	/** The start rule was renamed to {@code newName} in the grammar's text. */
 	public PreviewState withRenamedStartRule(@NotNull String newName) {
-		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, parsingResult, newName);
+		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, parsingResult, lexingResult, newName);
 	}
 
-	/** This snapshot with the result of parsing with it. */
-	public PreviewState withParsingResult(@Nullable ParsingResult result) {
-		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, result, renamedStartRule);
+	/** This snapshot with the result of parsing (or, for a lexer grammar alone, tokenizing) with it. */
+	public PreviewState withResults(@Nullable ParsingResult parsed, @Nullable LexingResult lexed) {
+		return new PreviewState(grammarFile, parserGrammar, lexerGrammar, startRule, parsed, lexed, renamedStartRule);
+	}
+
+	/** Whether this is a lexer grammar alone, which the preview tokenizes without parsing. */
+	public boolean isLexerOnly() {
+		return parserGrammar==null && lexerGrammar!=null && lexerGrammar!=ParsingUtils.BAD_LEXER_GRAMMAR;
 	}
 
 	/** Whether {@code ruleName} is the start rule, by its loaded or its renamed name. */

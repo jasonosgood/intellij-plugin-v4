@@ -163,16 +163,37 @@ public class ParsingUtils {
 			return null;
 		}
 
+		SyntaxErrorListener syntaxErrorListener = new SyntaxErrorListener();
+		CommonTokenStream tokens = new TokenStreamSubset(createLexer(lg, grammarFile, inputText, project, syntaxErrorListener));
+		return parseText(g, lg, startRuleName, syntaxErrorListener, tokens, 0);
+	}
+
+	/** Tokenizes {@code inputText} with the lexer grammar alone, no parser: the preview of a
+	 *  lexer grammar. Null if {@code lg} didn't load.
+	 */
+	public static @Nullable LexingResult lexText(@Nullable LexerGrammar lg,
+												 @NotNull VirtualFile grammarFile,
+												 @NotNull String inputText,
+												 @NotNull Project project) {
+		if ( lg==null || lg==BAD_LEXER_GRAMMAR ) return null;
+		SyntaxErrorListener syntaxErrorListener = new SyntaxErrorListener();
+		CommonTokenStream tokens = new CommonTokenStream(createLexer(lg, grammarFile, inputText, project, syntaxErrorListener));
+		return LexingResult.of(tokens, syntaxErrorListener, lg);
+	}
+
+	/** An interpreter for {@code lg} over {@code inputText}, with the grammar's case-changing
+	 *  setting applied and its errors going to {@code errors}, their spans to a {@link LexerErrorSpans}.
+	 */
+	private static LexerInterpreter createLexer(LexerGrammar lg, VirtualFile grammarFile, String inputText,
+												Project project, SyntaxErrorListener errors) {
 		ANTLRv4GrammarProperties grammarProperties = getGrammarProperties(project, grammarFile);
 		CharStream input = grammarProperties.getCaseChangingStrategy()
 				.applyTo(CharStreams.fromString(inputText, grammarFile.getPath()));
-		LexerInterpreter lexEngine;
-		lexEngine = lg.createLexerInterpreter(input);
-		SyntaxErrorListener syntaxErrorListener = new SyntaxErrorListener();
+		LexerInterpreter lexEngine = lg.createLexerInterpreter(input);
 		lexEngine.removeErrorListeners();
-		lexEngine.addErrorListener(syntaxErrorListener);
-		CommonTokenStream tokens = new TokenStreamSubset(lexEngine);
-		return parseText(g, lg, startRuleName, syntaxErrorListener, tokens, 0);
+		lexEngine.addErrorListener(errors);
+		lexEngine.addErrorListener(new LexerErrorSpans());
+		return lexEngine;
 	}
 
 	private static ParsingResult parseText(Grammar g,

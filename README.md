@@ -145,6 +145,18 @@ With alt-mouse movement, you'll see parse region for rule matching token under c
 
 ![parse-region.png](images/parse-region.png)
 
+### Token stream
+
+The preview's Tokens tab lists the tokens the lexer made from the input: index, type, text
+(with `\n`, `\r` and `\t` escaped), line:column and channel. Tokens on another channel than
+the default (`-> channel(HIDDEN)`) are greyed. Text that left no token is listed too, in
+italics: `(skipped)` for text a `-> skip` rule dropped, and `(error)` in red for text no rule
+matched. Turn off "Show skipped text" to see the tokens alone. Selecting a row selects its
+text in the input.
+
+A lexer grammar on its own can be previewed too: open it, type some input, and the preview
+shows its tokens (there is no parse tree without a parser).
+
 ### Grammar Profiler
 
 The profiler helps you understand which decisions in your grammar are complicated or expensive.  Profiling data is always available just like the parse tree during grammar interpretation.  The profiler cannot track code execution because it is running the grammar interpreter not executing compiled code.  It provides both a simplified set of columns and an expert set the provides a great deal more information. Clicking on a row in the profiler highlights the decision in the grammar and also highlights relevant pieces of the input, such as ambiguities or the deepest lookahead. You can sort the columns by clicking on the header row. Hover over the header row to get tooltips describing the column.
