@@ -13,35 +13,6 @@ work they belonged to.
   Performance yardstick: `antlr4-xl/test/oracle_normal.g4`, the largest grammar known.
 - Upstream later; this may stay a fork.
 
-## Now: the preview behaves like other IntelliJ previews (decided 2026-11-17)
-Prior art: Compose Preview (Android Studio) and SwiftUI previews pause on errors and mark stale
-results; Markdown and PlantUML previews; the IntelliJ UI guidelines (plugins.jetbrains.com/docs/
-intellij: Banner, Notification types, Empty state, Progress indicators, Tool window). The
-guidelines say nothing about paused or stale content; Compose and SwiftUI settle that.
-
-Conventions (those already followed are marked with the DONE.md item):
-- **Placement:** other previews are split editors; ours stays a tool window (DECISIONS.md).
-- **Errors:** pause, don't try. A grammar with errors in the editor is not loaded; the
-  preview keeps its last good result dimmed, under an Error banner naming the file (no link:
-  that grammar is open and selected already). It resumes when the errors go. Errors
-  themselves are the editor's (marks) and the build's (Build tool window); the preview only
-  points to them. (61)
-- **Messages:** the platform's banner (`EditorNotificationPanel`) at the top of the pane, two
-  sentences at most, at most two actions; not text drawn as a parse tree node. (61)
-- **Empty states:** `StatusText` with a reason and one or two links ("No start rule
-  selected"), not a fake tree node. (61)
-- **Busy:** spinner for work over the delay. (59)
-- **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date: an
-  Info banner says so, with a Save link, as Compose does. (62)
-- **Reports:** problems in a file go in the editor, build problems in the Build tool window,
-  a balloon only when the user must act. (63)
-- **Consoles** are for running processes. The Tool Output window is gone. (61)
-
-Steps, each checked in the sandbox and committed on its own. Done: 1, pause on errors and
-remove Tool Output (DONE.md item 61); 2, out-of-date banner (item 62); 3, Generate reports in
-the Build tool window (item 63). Left:
-4. **Speed search** in the parse tree, Hierarchy and Tokens tabs, if missing.
-
 ## Left open from saving and code generation
 The work is in DONE.md ("Saving and code generation", items 43–56); the rules are in
 [DECISIONS.md](DECISIONS.md).

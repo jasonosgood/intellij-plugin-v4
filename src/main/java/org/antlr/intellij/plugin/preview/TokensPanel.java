@@ -2,8 +2,10 @@ package org.antlr.intellij.plugin.preview;
 
 import com.intellij.ui.ColoredTableCellRenderer;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.speedSearch.SpeedSearchUtil;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import org.antlr.intellij.plugin.parsing.LexingResult;
@@ -20,11 +22,13 @@ import java.util.function.Consumer;
  *  alone, of tokenizing the input) as a table, one row per token. Tokens off the default
  *  channel are greyed. Input between tokens (skipped, or a lexer error) gets italic rows,
  *  unless "Show skipped text" is off. Selecting a row selects its text in the input editor.
+ *  Typing searches the Type and Text columns (the platform's speed search).
  *  <p>
  *  Prior art: ANTLR Lab's token list and {@code grun -tokens}; see {@link TokenRows}.
  */
 class TokensPanel extends JPanel {
 	private static final String[] COLUMNS = {"#", "Type", "Text", "Line:Col", "Channel"};
+	private static final int TYPE_COLUMN = 1, TEXT_COLUMN = 2;
 
 	private final TokensModel model = new TokensModel();
 	private final JBTable table = new JBTable(model);
@@ -48,6 +52,8 @@ class TokensPanel extends JPanel {
 		showSkipped.setToolTipText("Show the input between tokens: text a rule skipped, or no rule matched");
 		showSkipped.setBorder(JBUI.Borders.empty(2, 4));
 		showSkipped.addActionListener(e -> showRows());
+		TableSpeedSearch.installOn(table, (value, cell) ->
+			cell.column==TYPE_COLUMN || cell.column==TEXT_COLUMN ? String.valueOf(value) : null);
 		add(showSkipped, BorderLayout.NORTH);
 		add(new JBScrollPane(table), BorderLayout.CENTER);
 	}
@@ -104,8 +110,8 @@ class TokensPanel extends JPanel {
 			TokenRows.Row row = rows.get(rowIndex);
 			return switch ( columnIndex ) {
 				case 0 -> row.index()>=0 ? String.valueOf(row.index()) : "";
-				case 1 -> row.type();
-				case 2 -> row.text();
+				case TYPE_COLUMN -> row.type();
+				case TEXT_COLUMN -> row.text();
 				case 3 -> row.position();
 				default -> row.channel();
 			};
@@ -122,6 +128,7 @@ class TokensPanel extends JPanel {
 				case SKIPPED -> SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES;
 				case ERROR -> SimpleTextAttributes.ERROR_ATTRIBUTES;
 			});
+			SpeedSearchUtil.applySpeedSearchHighlighting(table, this, true, selected);
 		}
 	}
 }

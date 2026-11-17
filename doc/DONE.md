@@ -456,8 +456,9 @@ CLAUDE.md ("Diagnosing slowness").
     highlighting and parsing lexers. Tests: `ANTLRv4HighlightingLexerTest`.
 
 ## Preview: behaves like other IntelliJ previews (2026-11-17)
-Conventions and the remaining steps are in [IN_PROGRESS.md](IN_PROGRESS.md). Prior art:
-Compose Preview and SwiftUI previews; the IntelliJ UI guidelines.
+Four steps, each checked in the sandbox and committed on its own. The conventions are in
+[DECISIONS.md](DECISIONS.md). Prior art: Compose Preview and SwiftUI previews; the IntelliJ UI
+guidelines.
 
 61. The preview pauses on grammar errors; the Tool Output window is gone (verified in the
     sandbox, 2026-11-17). Grammars opt into the platform's problem-file tracking
@@ -495,3 +496,10 @@ Compose Preview and SwiftUI previews; the IntelliJ UI guidelines.
     `File` constructors are deprecated for removal in 2026.2). Prior art: actions running a
     Gradle or Maven task; the IDE's build output, which shows the JPS builder's ANTLR messages
     the same way. Tests: three in `GenerationBuildOutputTest`.
+64. Speed search in the preview's Hierarchy and Tokens tabs (verified in the sandbox,
+    2026-11-17). Typing finds a node in Hierarchy, collapsed ones included (`TreeSpeedSearch`),
+    or a row in Tokens by its Type or Text (`TableSpeedSearch`; not by "#", so "3" finds the
+    text 3); matches are highlighted (`SpeedSearchUtil`, Hierarchy's renderer now a
+    `ColoredTreeCellRenderer`). A found Hierarchy node or token row selects its text in the
+    input, as a click does. Left out of the parse tree tab, a drawing with no selection
+    (DECISIONS.md). Prior art: the Project and Structure views. Tests: two in `PreviewPanelTest`.

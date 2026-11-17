@@ -1,7 +1,10 @@
 package org.antlr.intellij.plugin.preview;
 
 import com.intellij.openapi.application.WriteIntentReadAction;
+import com.intellij.ui.ColoredTreeCellRenderer;
+import com.intellij.ui.TreeSpeedSearch;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.speedSearch.SpeedSearchUtil;
 import org.antlr.intellij.plugin.Icons;
 import org.antlr.v4.gui.TreeTextProvider;
 import org.antlr.v4.gui.TreeViewer;
@@ -10,6 +13,7 @@ import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.antlr.v4.runtime.tree.Tree;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -21,7 +25,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A Preview sub-tab that displays a hierarchical tree of matched parser rules.
+ * A Preview sub-tab that displays a hierarchical tree of matched parser rules. Typing searches
+ * the nodes, collapsed ones included (the platform's speed search, as in Project and Structure).
  */
 class HierarchyViewer extends JPanel implements TreeSelectionListener {
 
@@ -52,12 +57,17 @@ class HierarchyViewer extends JPanel implements TreeSelectionListener {
 	private void setupTree(Tree tree) {
 		setTree(tree);
 
-		DefaultTreeCellRenderer renderer = new DefaultTreeCellRenderer();
-		renderer.setOpenIcon(Icons.PARSER_RULE);
-		renderer.setClosedIcon(Icons.PARSER_RULE);
-		renderer.setLeafIcon(Icons.LEXER_RULE);
-		myTree.setCellRenderer(renderer);
+		myTree.setCellRenderer(new ColoredTreeCellRenderer() {
+			@Override
+			public void customizeCellRenderer(@NotNull JTree tree, Object value, boolean selected, boolean expanded,
+											  boolean leaf, int row, boolean hasFocus) {
+				setIcon(leaf ? Icons.LEXER_RULE : Icons.PARSER_RULE);
+				append(String.valueOf(value));
+				SpeedSearchUtil.applySpeedSearchHighlighting(tree, this, true, selected);
+			}
+		});
 		myTree.addTreeSelectionListener(this);
+		TreeSpeedSearch.installOn(myTree, true, path -> path.getLastPathComponent().toString());
 	}
 
 	public void setTree(Tree tree) {
@@ -70,6 +80,10 @@ class HierarchyViewer extends JPanel implements TreeSelectionListener {
 
 	public void setTreeTextProvider(TreeTextProvider treeTextProvider) {
 		this.treeTextProvider = treeTextProvider;
+	}
+
+	JTree getTree() {
+		return myTree;
 	}
 
 	private MutableTreeNode wrap(final Tree tree) {

@@ -91,6 +91,7 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	        with the text between tokens that skip rules dropped or no rule matched; selecting a
 	        row selects its text in the input. A lexer grammar on its own now previews too: its
 	        input is tokenized and shown in the Tokens tab.</li>
+	    <li>New: type to search in the preview's Hierarchy and Tokens tabs, as in the Project view.</li>
 	    <li>Changed: switching editor tabs no longer saves the grammar; the preview follows your saves
 	        (Save All, or the IDE's autosave). To see unsaved files, turn on Settings &gt; Editor &gt;
 	        General &gt; Editor Tabs &gt; Mark modified (*).</li>

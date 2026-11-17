@@ -20,6 +20,9 @@ import com.intellij.codeInsight.daemon.impl.WolfTheProblemSolverImpl;
 import com.intellij.openapi.Disposable;
 import com.intellij.problems.WolfTheProblemSolver;
 import com.intellij.testFramework.PlatformTestUtil;
+import com.intellij.ui.SpeedSearchBase;
+import com.intellij.ui.speedSearch.SpeedSearchSupply;
+import com.intellij.ui.table.JBTable;
 import org.antlr.intellij.plugin.GrammarEditorTabListener;
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
 import org.antlr.intellij.plugin.actions.GenerateParserAction;
@@ -33,6 +36,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.tool.Grammar;
 import org.antlr.v4.tool.LexerGrammar;
 
+import javax.swing.*;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -254,6 +258,36 @@ public class PreviewPanelTest extends AntlrFixtureTestCase {
 		typeInputForTokens("10.20.30");
 		panel.getTokensPanel().getTable().setRowSelectionInterval(2, 2); // the second NUMBER
 		assertEquals("20", panel.getInputPanel().getInputEditor().getSelectionModel().getSelectedText());
+	}
+
+	/** Typing in the Tokens tab searches the Type and Text columns, not the others. */
+	public void testSpeedSearchInTokens() {
+		select(lexer);
+		attachPanel();
+		typeInputForTokens("1.2.3");
+		JBTable table = panel.getTokensPanel().getTable();
+		speedSearch(table).findAndSelectElement("DOT");
+		assertEquals(1, table.getSelectedRow());
+		speedSearch(table).findAndSelectElement("3"); // the Text "3", not the "#" 3 (the second DOT)
+		assertEquals(4, table.getSelectedRow());
+	}
+
+	/** Typing in the Hierarchy tab finds nodes inside collapsed ones. */
+	public void testSpeedSearchInHierarchy() {
+		select(parser);
+		attachPanel();
+		preview.setStartRule(parser, "semver");
+		typeInput("1.2.3-rc");
+		JTree tree = panel.hierarchyViewer.getTree();
+		speedSearch(tree).findAndSelectElement("preRelease");
+		assertNotNull("nothing selected in " + tree.getModel().getRoot(), tree.getSelectionPath());
+		assertTrue(tree.getSelectionPath().getLastPathComponent().toString().startsWith("preRelease"));
+	}
+
+	private static SpeedSearchBase<?> speedSearch(JComponent component) {
+		SpeedSearchSupply supply = SpeedSearchSupply.getSupply(component, true);
+		assertNotNull("no speed search on " + component, supply);
+		return (SpeedSearchBase<?>) supply;
 	}
 
 	public void testSavingAGrammarReloadsIt() {

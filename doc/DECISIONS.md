@@ -118,8 +118,31 @@ parentheses are item numbers in [DONE.md](DONE.md).
   (Markdown, AsciiDoc, Compose) sit beside the source in a split editor. Ours runs a grammar
   against separate input and shows several result tabs, like tools that evaluate something
   against sample input (the JSONPath evaluator, ANTLR Lab), so it keeps its own pane. It
-  follows the other previews otherwise (IN_PROGRESS.md, "the preview behaves like other
-  IntelliJ previews").
+  follows the other previews otherwise (below).
+- **The preview behaves like other IntelliJ previews (61–64, 2026-11-17).** Prior art: Compose
+  Preview (Android Studio) and SwiftUI previews, which pause on errors and mark stale results;
+  the Markdown and PlantUML previews; the IntelliJ UI guidelines (Banner, Notification types,
+  Empty state, Progress indicators, Tool window). The guidelines say nothing about paused or
+  stale content; Compose and SwiftUI settle that.
+  - **Errors:** pause, don't try. A grammar with errors in the editor is not loaded; the
+    preview keeps its last good result dimmed, under an Error banner naming the file (no link:
+    that grammar is open and selected already), and resumes when the errors go. Errors
+    themselves are the editor's (marks) and the build's (Build tool window); the preview only
+    points to them. (61)
+  - **Messages:** the platform's banner (`EditorNotificationPanel`) at the top of the pane, two
+    sentences at most, at most two actions; not text drawn as a parse tree node. (61)
+  - **Empty states:** `StatusText` with a reason and one or two links ("No start rule
+    selected"), not a fake tree node. (61)
+  - **Busy:** spinner for work over the delay. (59)
+  - **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date: an
+    Info banner says so, with a Save link, as Compose does. (62)
+  - **Reports:** problems in a file go in the editor, build problems in the Build tool window,
+    a balloon only when the user must act. (63)
+  - **Consoles** are for running processes. The Tool Output window is gone. (61)
+  - **Speed search** in the Hierarchy and Tokens tabs, the platform's (`TreeSpeedSearch`,
+    `TableSpeedSearch`), as in the Project and Structure views. Not in the parse tree tab: it
+    is ANTLR's `TreeViewer`, a drawing with no focus or selection, so the platform's speed
+    search can't attach; Hierarchy shows the same tree and is searchable. (64)
 - **Keep stable.** Persisted settings: `ANTLRv4GrammarPropertiesComponent` (`@State
   "ANTLRGenerationPreferences"`) stores per-grammar settings keyed by path; users' stored configs
   must still load, and changing the key needs a migration. Dynamic plugin loading: the verifier

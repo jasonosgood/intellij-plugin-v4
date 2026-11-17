@@ -158,7 +158,8 @@ The preview's Tokens tab lists the tokens the lexer made from the input: index, 
 the default (`-> channel(HIDDEN)`) are greyed. Text that left no token is listed too, in
 italics: `(skipped)` for text a `-> skip` rule dropped, and `(error)` in red for text no rule
 matched. Turn off "Show skipped text" to see the tokens alone. Selecting a row selects its
-text in the input.
+text in the input. Start typing to find a token by its type or text; the Hierarchy tab
+searches its rule nodes the same way.
 
 A lexer grammar on its own can be previewed too: open it, type some input, and the preview
 shows its tokens (there is no parse tree without a parser).
