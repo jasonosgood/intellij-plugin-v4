@@ -118,6 +118,9 @@ For really big files and slow grammars, there is an appreciable delay when displ
 	        parse after loading pays that.</li>
 	    <li>New: the preview shows a spinner over its results while a grammar loads or a parse
 	        takes more than a moment, so a large grammar no longer looks hung.</li>
+	    <li>Fixed: typing in a large grammar was slow, and could color the rest of the file as
+	        errors after an edit inside <code>options { }</code>. Brace matching no longer covers
+	        braces inside actions and <code>[...]</code>.</li>
 	    <li>Fixed: clicking a row in the Profiler threw an exception.</li>
 	    <li>Fixed: grammar analysis and refactorings no longer freeze the editor on large grammars.</li>
 	    <li>The plugin can be enabled or disabled without restarting the IDE.</li>

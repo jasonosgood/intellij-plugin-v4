@@ -12,6 +12,9 @@ parentheses are item numbers in [DONE.md](DONE.md).
   On grammars-v4 (1,102 files) it found a plugin parser bug, now fixed: lexer alternatives made
   only of commands (`OTHER : -> mode(DEFAULT_MODE) ;`) were syntax errors in the editor. Known
   difference: xl rejects labels in lexer rules (`LexerElementLabel.g4`), as ANTLR does.
+  Highlighting is the exception: the editor highlights with xl's lexer (DONE.md item 60), which
+  has no modes and so restarts anywhere; the PSI keeps the plugin's lexer. xl's token names are
+  then plugin API: `ANTLRv4HighlightingLexerTest` fails if one has no plugin token type.
 - **Format after sort: no (9).** Separate commands; reformat-on-save covers it. Prior art:
   IntelliJ's Rearrange Code is separate from Reformat Code.
 - **Extract Rule's `update()` doesn't check the selection's shape (30).** Matches the platform

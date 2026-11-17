@@ -12,6 +12,9 @@ import static org.antlr.intellij.plugin.parser.ANTLRv4Lexer.*;
 
 public class ANTLRv4BraceMatcher implements PairedBraceMatcher {
 
+	/** Pairs of the highlighting lexer's tokens ({@code ANTLRv4HighlightingLexer}). Actions and
+	 *  {@code [...]} are one token each there, so their brackets aren't matched.
+	 */
 	@NotNull
 	@Override
 	public BracePair[] getPairs() {
@@ -20,8 +23,6 @@ public class ANTLRv4BraceMatcher implements PairedBraceMatcher {
 				new BracePair(getTokenElementType(OPTIONS), getTokenElementType(RBRACE), true),
 				new BracePair(getTokenElementType(TOKENS), getTokenElementType(RBRACE), true),
 				new BracePair(getTokenElementType(CHANNELS), getTokenElementType(RBRACE), true),
-				new BracePair(getTokenElementType(BEGIN_ACTION), getTokenElementType(END_ACTION), false),
-				new BracePair(getTokenElementType(BEGIN_ARGUMENT), getTokenElementType(END_ARGUMENT), false),
 				new BracePair(getTokenElementType(LT), getTokenElementType(GT), false),
 		};
 	}

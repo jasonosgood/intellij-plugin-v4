@@ -83,6 +83,10 @@ Not on their own:
   lexing large inputs shows up as slow.
 - **Show that the preview is working. Done** (DONE.md item 59). Not done: the 500 ms
   `MergingUpdateQueue` wait before a parse starts shows nothing (it is the typing debounce).
+- **Highlighting target code in actions and `[...]` (owner, if ever needed).** They are one
+  uncolored token each (DONE.md item 60), on purpose. If highlighting them is wanted, try a
+  `LayeredLexer` first: the platform's way to re-lex chosen tokens with another lexer (Java's
+  highlighter does it for strings and doc comments).
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 - **Sample IntelliJ + ANTLR4 project** (owner, 2026-11-16). A small project to open in the
   sandbox: a grammar, sample inputs, and Java code that uses the generated parser, built by

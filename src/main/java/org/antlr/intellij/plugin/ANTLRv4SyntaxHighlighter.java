@@ -6,7 +6,7 @@ import com.intellij.openapi.editor.HighlighterColors;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.fileTypes.SyntaxHighlighterBase;
 import com.intellij.psi.tree.IElementType;
-import org.antlr.intellij.plugin.adaptors.ANTLRv4LexerAdaptor;
+import org.antlr.intellij.plugin.adaptors.ANTLRv4HighlightingLexer;
 import org.antlr.intellij.plugin.parser.ANTLRv4Lexer;
 import org.jetbrains.annotations.NotNull;
 
@@ -36,8 +36,7 @@ public class ANTLRv4SyntaxHighlighter extends SyntaxHighlighterBase {
 	@NotNull
 	@Override
 	public Lexer getHighlightingLexer() {
-		ANTLRv4Lexer lexer = new ANTLRv4Lexer(null);
-		return new ANTLRv4LexerAdaptor(lexer);
+		return new ANTLRv4HighlightingLexer(); // xl's lexer, restartable anywhere; see there
 	}
 
 	@NotNull

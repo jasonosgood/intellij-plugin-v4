@@ -27,6 +27,8 @@ public class ANTLRv4LexerAdaptor extends ANTLRLexerAdaptor {
 
 	public ANTLRv4LexerAdaptor(ANTLRv4Lexer lexer) {
 		super(ANTLRv4Language.INSTANCE, lexer);
+		// errors become error tokens; ANTLR's default listener would print each one
+		lexer.removeErrorListeners();
 	}
 
 	@Override

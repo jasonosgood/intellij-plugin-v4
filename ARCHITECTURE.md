@@ -22,8 +22,12 @@ An ANTLR v4 grammar in `src/main/antlr` is used to generate a lexer/parser.
 `ANTLRv4ParserDefinition` uses the [`antlr4-intellij-adaptor` library][2] to 
 delegate parsing/lexing to these generated classes.
 
-Syntax highlighting is also using the generated lexer (by delegation) in
-`org.antlr.intellij.plugin.ANTLRv4SyntaxHighlighter.getHighlightingLexer`.
+Syntax highlighting uses another lexer: antlr4-xl's `ANTLR4Lexer`, through
+`ANTLRv4HighlightingLexer`, which reports its tokens as the plugin's token types (so the
+highlighter, the brace matcher and the comment tokens work on them unchanged). The editor
+restarts its highlighting lexer mid-file after every edit; xl's lexer has no modes or state, so
+it restarts anywhere, where the plugin's lexer (modes, fields) didn't restart correctly.
+Actions, predicates and `[...]` are target code, one uncolored token each.
 
 ## Error checking
 

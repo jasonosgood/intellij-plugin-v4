@@ -366,6 +366,22 @@ experimental uses (`BrowseFolderRunnable`, the never-working file input of 33).
     progress postpone time), so quick work doesn't flash it. The input editor and the Cancel
     button stay usable. Prior art: `JBLoadingPanel` in the VCS log and diff viewer. Tests:
     `PreviewPanelTest` (parse and grammar load, the load held behind a blocked loader thread).
+60. Typing in a large grammar was slow; now fast (verified in the sandbox, 2026-11-17).
+    On `oracle_normal.g4` (10,588 lines), thread dumps showed
+    the editor's highlighting lexer re-lexing the rest of the file on the EDT after edits, and
+    48,500 "token recognition error" lines in `idea.log` in a minute. The plugin's lexer
+    didn't restart correctly: its `insideOptionsBlock` field wasn't in the saved state, so a
+    restart could lex everything after an `options { }` in options mode (the platform's
+    `LexerTestCase.checkCorrectRestart` fails on a five-line grammar); the adaptor library's
+    `ANTLRLexerState` compares mode stacks by array identity, so states never matched while a
+    mode was pushed; and ANTLR's `ConsoleErrorListener` printed every error. Now the editor
+    highlights with antlr4-xl's lexer (no modes, state always 0) through
+    `ANTLRv4HighlightingLexer`, mapped to the plugin's token types; unmatched text is one bad
+    character, lexing resumes after it. The PSI keeps the plugin's lexer, which lexes from the
+    start, now without the console listener. Brace matching inside actions and `[...]` is gone
+    (one token each). Neither lexer reports an error on grammars-v4 (1,102 files); a full lex
+    of `oracle_normal.g4` takes ~4 ms. Prior art: the platform's separate
+    highlighting and parsing lexers. Tests: `ANTLRv4HighlightingLexerTest`.
 18. Static `RefactorUtils.lexerRuleNameID`; non-final `BAD_*_GRAMMAR`. Generate Lexer Rules
     names `T__N` from the first number not already used in the grammar (and names each literal
     once); the `BAD_*` markers are `final`.
