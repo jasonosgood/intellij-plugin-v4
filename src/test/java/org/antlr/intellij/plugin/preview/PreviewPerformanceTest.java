@@ -13,8 +13,9 @@ import java.io.File;
 /**
  * Speed baseline for the preview on the largest grammar known, antlr4-xl's
  * {@code test/oracle_normal.g4}: grammar load (ANTLR's full analysis), the first parse (cold
- * prediction cache) and a second (warm, see {@code ParserDfaCache}). Prints timings; asserts
- * nothing about them. Off by default; run with {@code ANTLR_PERF=1}:
+ * prediction cache) and a second (warm, see {@code ParserDfaCache}), then lexing alone: an
+ * empty input (the cost of making the lexer, see {@code LexerDfaCache}) and a large one, twice
+ * each. Prints timings; asserts nothing about them. Off by default; run with {@code ANTLR_PERF=1}:
  * {@code ANTLR_PERF=1 ./gradlew test --tests '*PreviewPerformanceTest'}.
  */
 public class PreviewPerformanceTest extends AntlrFixtureTestCase {
@@ -42,6 +43,18 @@ public class PreviewPerformanceTest extends AntlrFixtureTestCase {
 			System.out.printf("PERF oracle_normal run %d: load %d ms, parse cold %d ms, warm %d ms (%d rules, %d syntax errors)%n",
 				run, (t1 - t0)/1_000_000, (t2 - t1)/1_000_000, (t3 - t2)/1_000_000, g.rules.size(),
 				result.syntaxErrorListener.getSyntaxErrors().size());
+			// lexing alone: an empty input (making the interpreter) and a large one, twice each
+			String large = (INPUT + ";\n").repeat(LARGE_LINES);
+			for (String[] input : new String[][] {{"empty", ""}, {LARGE_LINES + " lines", large}}) {
+				for (int i = 1; i<=2; i++) {
+					long l0 = System.nanoTime();
+					assertNotNull(ParsingUtils.lexText(lg, vfile, input[1], getProject()));
+					System.out.printf("PERF oracle_normal run %d: lex %s #%d %d ms%n",
+						run, input[0], i, (System.nanoTime() - l0)/1_000_000);
+				}
+			}
 		}
 	}
+
+	private static final int LARGE_LINES = 5000;
 }

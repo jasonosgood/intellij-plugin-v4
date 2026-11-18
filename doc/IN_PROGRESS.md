@@ -7,10 +7,6 @@ working in this repo to [CLAUDE.md](../CLAUDE.md).
 ## Left open from saving and code generation
 The work is in DONE.md ("Saving and code generation", items 43–56, and item 65); the rules
 are in [DECISIONS.md](DECISIONS.md).
-- **A settings change alone doesn't regenerate** in the JPS build. Changing a grammar's
-  package or output directory doesn't make the grammar dirty; Rebuild Project fixes it. A fix
-  would store the arguments with the outputs and compare. Prior art: javac option changes
-  force a rebuild in JPS.
 - **JPS, Gradle and Maven interplay** (owner, 2026-11-17: revisit later). The plugin knows a
   module was imported from Gradle or Maven, not whether its build applies an ANTLR plugin.
   Without one, nothing generates the recognizers: Generate's "not generated… its build
@@ -24,14 +20,13 @@ are in [DECISIONS.md](DECISIONS.md).
   `tmp/gradle-check` (Gradle `antlr` plugin, semver grammars).
 
 ## Later: preview UX
-- **Lexer DFA per parse.** Parses share the grammar's prediction cache (DONE.md item 58), but
-  the lexer's DFA is still built per parse (`createLexerInterpreter`); worth sharing the same
-  way if lexing large inputs shows up as slow.
-- **The typing debounce shows nothing.** The 500 ms `MergingUpdateQueue` wait before a parse
-  starts has no busy indication (the spinner is DONE.md item 59).
 - Owner has more UX ideas for working on a grammar and its samples side by side.
 
 ## Tabled
+- **A settings change alone doesn't regenerate** in the JPS build (tabled by the owner,
+  2026-11-17). Changing a grammar's package or output directory doesn't make the grammar
+  dirty; Rebuild Project fixes it. A fix would store the arguments with the outputs and
+  compare. Prior art: javac option changes force a rebuild in JPS.
 - **Plugin reload leaks its class loader** (tabled by the owner, 2026-11-16: the platform's
   problem). Rebuilding under a running sandbox now reloads the plugin (DONE.md item 56), but
   the IDE then says "Restart advised: 'ANTLR v4' plugin didn't unload fully": the old class

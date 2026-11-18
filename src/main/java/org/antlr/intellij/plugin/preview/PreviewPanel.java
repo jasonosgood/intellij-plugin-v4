@@ -26,6 +26,7 @@ import com.intellij.ui.EditorNotificationPanel;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzerSettings;
 import com.intellij.ui.components.JBLoadingPanel;
 import com.intellij.ui.components.JBPanelWithEmptyText;
 import com.intellij.ui.components.JBScrollPane;
@@ -121,7 +122,11 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 	private ActionToolbar buttonBar;
 	private final CancelParserAction cancelParserAction = new CancelParserAction();
 
-	/** Used to avoid reparsing and also updating the parse tree upon each keystroke. */
+	/** Used to avoid reparsing and also updating the parse tree upon each keystroke. Waits the
+	 *  IDE's autoreparse delay (Settings > Editor > General, 300 ms by default), as the editor's
+	 *  own analysis does after typing; nothing shows during it. A warm parse takes ~14 ms on
+	 *  {@code oracle_normal.g4}, so the wait is most of the delay before results update.
+	 */
 	private final MergingUpdateQueue updateQueue;
 
 	public PreviewPanel(Project project) {
@@ -129,7 +134,7 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 		createGUI();
 		updateQueue =
 				new MergingUpdateQueue("(Re-) Parse Queue",
-						500,
+						DaemonCodeAnalyzerSettings.getInstance().getAutoReparseDelay(),
 						true,
 						treeViewer
 				);

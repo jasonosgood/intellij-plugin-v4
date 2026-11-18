@@ -187,7 +187,7 @@ public class ParsingUtils {
 		ANTLRv4GrammarProperties grammarProperties = getGrammarProperties(project, grammarFile);
 		CharStream input = grammarProperties.getCaseChangingStrategy()
 				.applyTo(CharStreams.fromString(inputText, grammarFile.getPath()));
-		LexerInterpreter lexEngine = lg.createLexerInterpreter(input);
+		LexerInterpreter lexEngine = LexerDfaCache.newLexer(lg, input);
 		lexEngine.removeErrorListeners();
 		lexEngine.addErrorListener(errors);
 		lexEngine.addErrorListener(new LexerErrorSpans());

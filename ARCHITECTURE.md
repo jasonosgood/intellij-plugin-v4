@@ -173,7 +173,8 @@ thus preventing IDE freezes or OutOfMemoryExceptions.
 
 Preview parsers of one loaded grammar share its prediction cache (`ParserDfaCache`: ATN,
 DFA, `PredictionContextCache`), as instances of a generated parser share static ones. Without
-it every parse starts cold, which on a large grammar is most of the parse time. Every preview
+it every parse starts cold, which on a large grammar is most of the parse time. Preview lexers
+do the same (`LexerDfaCache`), which also saves ANTLR's ATN round trip on every lex. Every preview
 parse profiles with exact ambiguity detection; measured, that costs little.
 
 [1]: https://github.com/JetBrains/intellij-platform-gradle-plugin

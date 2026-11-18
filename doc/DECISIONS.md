@@ -146,6 +146,9 @@ parentheses are item numbers in [DONE.md](DONE.md).
   - **Empty states:** `StatusText` with a reason and one or two links ("No start rule
     selected"), not a fake tree node. (61)
   - **Busy:** spinner for work over the delay. (59)
+  - **Typing:** the reparse waits the IDE's autoreparse delay (Settings > Editor > General,
+    300 ms by default), as the editor's own analysis does, and shows nothing meanwhile: warm
+    parses take ~14 ms on `oracle_normal.g4`, so the wait is most of the delay. (67)
   - **Stale:** the grammar reloads on save, so unsaved edits leave the preview out of date: an
     Info banner says so, with a Save link, as Compose does. (62)
   - **Reports:** problems in a file go in the editor, build problems in the Build tool window,

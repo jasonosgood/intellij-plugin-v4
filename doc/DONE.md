@@ -511,3 +511,17 @@ guidelines.
     (`PropertiesComponent`, as `OutputRootOffer`'s "Don't offer again"); later Generates
     generate without the notification. Prior art: a dialog's "Don't ask again" remembers its
     answer. README and change notes updated. Test: `GenerateParserActionTest`.
+
+## Preview: speed follow-ups (2026-11-17 to 2026-11-18)
+66. Preview lexers share the grammar's prediction cache (verified in the sandbox, 2026-11-18).
+    Measured on `oracle_normal.g4` first: lexing itself wasn't slow, but making the lexer cost
+    ~15 ms per parse (`Grammar.createLexerInterpreter` round-trips the ATN through the
+    serializer on every call), about half of a warm parse. `LexerDfaCache` keeps one ATN, DFA
+    and context cache per loaded `LexerGrammar` (weak keys), as `ParserDfaCache` does, with
+    channel names by channel number. Now: making the lexer ~0 ms, warm parse ~30 → ~14 ms,
+    5,000 lines lex in 15–28 ms instead of 35–45. Tests: three in `LexerDfaCacheTest` (same
+    tokens as ANTLR's interpreter, modes and channels included); `PreviewPerformanceTest`
+    prints lexing times.
+67. Shorter typing wait (verified in the sandbox, 2026-11-18). The reparse waits the IDE's
+    autoreparse delay (300 ms by default) instead of a fixed 500 ms. The owner chose no
+    indication during it, since warm parses now take ~14 ms (DECISIONS.md).
