@@ -21,12 +21,14 @@ import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
 import org.antlr.intellij.plugin.ANTLRv4FileRoot;
 import org.antlr.intellij.plugin.format.TextDiffs;
-import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import xl.GrammarSyntaxException;
 import xl.Linter;
+import xl.errors.Diagnostic;
+import xl.errors.Fix;
+import xl.errors.Position;
+import xl.errors.Range;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -86,20 +88,19 @@ public class GrammarLintAnnotator extends ExternalAnnotator<GrammarLintAnnotator
 		}
 	}
 
-	/** The linter's findings with token indexes turned into editor offsets. */
+	/** The linter's diagnostics with code-point positions turned into editor offsets. */
 	static List<Problem> lint(String text) {
 		Linter linter = new Linter();
-		List<Linter.Finding> findings = linter.lint(text);
-		TokenStream tokens = linter.tokens();
+		List<Diagnostic> findings = linter.lint(text);
 		List<Problem> problems = new ArrayList<>();
-		for (Linter.Finding f : findings) {
+		for (Diagnostic diagnostic : findings) {
 			List<Replacement> replacements = new ArrayList<>();
-			for (Linter.Edit e : f.edits()) {
-				TextRange range = range(text, tokens.get(e.from()), tokens.get(e.to()));
-				replacements.add(new Replacement(range, e.text()==null ? "" : e.text()));
+			for (Fix fix : diagnostic.fixes()) {
+				TextRange range = range(text, fix.range());
+				replacements.add(new Replacement(range, fix.replacement()));
 			}
 			replacements.sort(Comparator.comparingInt((Replacement r) -> r.range().getStartOffset()).reversed());
-			problems.add(new Problem(range(text, f.at(), f.at()), lintId(f.message()), f.message(), replacements));
+			problems.add(new Problem(range(text, diagnostic.range()), diagnostic.code(), diagnostic.message(), replacements));
 		}
 		return problems;
 	}
@@ -146,19 +147,22 @@ public class GrammarLintAnnotator extends ExternalAnnotator<GrammarLintAnnotator
 		return buf.toString();
 	}
 
-	/** Editor (UTF-16) range of tokens first..last; ANTLR counts code points. */
-	private static TextRange range(String text, Token first, Token last) {
-		return new TextRange(utf16(text, first.getStartIndex()), utf16(text, last.getStopIndex() + 1));
+	/** Editor (UTF-16) range of diagnostic positions; ANTLR counts code points. */
+	static TextRange range(String text, Range range) {
+		return new TextRange(offset(text, range.start()), offset(text, range.end()));
 	}
 
-	private static int utf16(String text, int codePointIndex) {
-		return text.offsetByCodePoints(0, Math.min(codePointIndex, text.codePointCount(0, text.length())));
-	}
-
-	/** "lint4" from "lint4: parentheses ...". */
-	private static String lintId(String message) {
-		int colon = message.indexOf(':');
-		return colon>0 ? message.substring(0, colon) : "lint";
+	private static int offset(String text, Position position) {
+		int lineStart = 0;
+		for (int line = 1; line < position.line(); line++) {
+			int newline = text.indexOf('\n', lineStart);
+			if (newline<0) return text.length();
+			lineStart = newline + 1;
+		}
+		int lineEnd = text.indexOf('\n', lineStart);
+		if (lineEnd<0) lineEnd = text.length();
+		int columns = text.codePointCount(lineStart, lineEnd);
+		return text.offsetByCodePoints(lineStart, Math.min(position.column(), columns));
 	}
 
 	@Override

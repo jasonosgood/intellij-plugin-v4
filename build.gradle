@@ -58,16 +58,19 @@ intellijPlatform {
     }
 }
 
-// antlr4-xl (git submodule): grammar tooling -- formatter, rule sorter, later the linter.
-// Compiled from source in its own source set; its meta-grammar is regenerated with our ANTLR
-// so the plugin ships one runtime. Override the location with -Pantlr4XlDir=...
+// antlr4-xl (git submodule): grammar tooling -- formatter, rule sorter, linter and diagnostics.
+// Compiled from source in its own source set; both grammars are regenerated with our ANTLR so the
+// plugin ships one runtime. Override the location with -Pantlr4XlDir=...
 def xlDir = file(findProperty("antlr4XlDir") ?: "antlr4-xl")
 if (!file("$xlDir/src/xl/Formatter.java").exists()) {
     throw new GradleException("antlr4-xl not found at $xlDir; run: git submodule update --init")
 }
 def xlTools = ["Formatter", "SortRules", "Linter", "GrammarSyntaxException"]
-// The meta-grammar is moving from grammar/ to src/xl/ in antlr4-xl. Include exactly one copy:
-// with -Xexact-output-dir both would generate into the same folder and the last would win.
+def xlErrors = ["Position", "Range", "Severity", "Label", "Fix", "Diagnostic", "Diagnostics",
+                "Chars", "PreCheck", "TokenCheck", "FriendlyLexer", "FriendlyErrorStrategy"]
+def xlPreCheckGenerated = layout.buildDirectory.dir("generated-src/antlr/xl-errors/xl/errors")
+// Use the current meta-grammar path, with a fallback for older submodule revisions. Include exactly
+// one copy: with -Xexact-output-dir both would generate into the same folder and the last would win.
 def xlGrammar = ["src/xl/ANTLR4.g4", "grammar/ANTLR4.g4"].find { file("$xlDir/$it").exists() }
 
 sourceSets {
@@ -79,7 +82,10 @@ sourceSets {
         java {
             srcDir "$xlDir/src"
             include xlTools.collect { "xl/${it}.java" }
+            include xlErrors.collect { "xl/errors/${it}.java" }
             include "xl/ANTLR4*.java" // generated parser
+            include "PreCheckLexer.java"
+            srcDir xlPreCheckGenerated
         }
     }
 }
@@ -87,6 +93,17 @@ sourceSets {
 generateXlGrammarSource {
     arguments += ["-package", "xl", "-visitor", "-Xexact-output-dir"]
     outputDirectory = layout.buildDirectory.dir("generated-src/antlr/xl/xl").get().asFile
+}
+
+tasks.register("generateXlPreCheckLexer", org.gradle.api.plugins.antlr.AntlrTask) {
+    source = files("$xlDir/src/xl/errors/PreCheckLexer.g4")
+    antlrClasspath = configurations.antlr
+    outputDirectory = xlPreCheckGenerated.get().asFile
+    arguments += ["-package", "xl.errors", "-Xexact-output-dir"]
+}
+
+tasks.named("compileXlJava") {
+    dependsOn(tasks.named("generateXlPreCheckLexer"))
 }
 
 jar {

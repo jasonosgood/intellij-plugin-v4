@@ -2,7 +2,12 @@ package org.antlr.intellij.plugin.lint;
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.openapi.util.TextRange;
 import org.antlr.intellij.plugin.AntlrFixtureTestCase;
+import xl.Linter;
+import xl.errors.Diagnostic;
+import xl.errors.Position;
+import xl.errors.Range;
 
 import java.util.List;
 
@@ -96,5 +101,19 @@ public class GrammarLintTest extends AntlrFixtureTestCase {
 		List<GrammarLintAnnotator.Problem> problems = GrammarLintAnnotator.lint(text);
 		GrammarLintAnnotator.Problem parens = problems.stream().filter(p -> p.lint().equals("lint4")).findFirst().orElseThrow();
 		assertEquals("(", parens.range().substring(text));
+	}
+
+	public void testLinterUsesSharedDiagnosticsAndGroupsFixes() {
+		Diagnostic parens = new Linter().lint(GRAMMAR).stream()
+			.filter(d -> d.code().equals("lint4")).findFirst().orElseThrow();
+		assertEquals("WARNING", parens.severity().name());
+		assertEquals(2, parens.fixes().size());
+		assertTrue(parens.fixes().stream().allMatch(f -> f.replacement().isEmpty()));
+	}
+
+	public void testMultilineCodePointRangeConvertsToEditorOffsets() {
+		String text = "grammar T;\n// 😀 emoji\nstart : ( B ) EOF ;\nB : 'b' ;\n";
+		TextRange range = GrammarLintAnnotator.range(text, new Range(new Position(3, 0), new Position(4, 0)));
+		assertEquals(text.substring(text.indexOf("start"), text.indexOf("B :")), range.substring(text));
 	}
 }
