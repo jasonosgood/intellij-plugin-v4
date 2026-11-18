@@ -1,9 +1,12 @@
 package org.antlr.intellij.plugin.adaptors;
 
 import com.intellij.lexer.Lexer;
+import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.testFramework.LexerTestCase;
 import org.antlr.intellij.plugin.ANTLRv4TokenTypes;
 
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -102,10 +105,56 @@ public class ANTLRv4HighlightingLexerTest extends LexerTestCase {
 			SEMI (';')""");
 	}
 
-	/** The grammar whose typing was slow (the plugin's lexer, restarted in options mode). */
+	public void testLargeGrammarFixtureCheckoutStates() throws Exception {
+		Path temp = Files.createTempDirectory(Files.createDirectories(Path.of("tmp")), "highlight-fixture-");
+		try {
+			Path checkout = temp.resolve("antlr4-xl");
+			assertNull(largeGrammarFixture(checkout));
+			Files.createDirectory(checkout);
+			assertNull(largeGrammarFixture(checkout));
+			Files.writeString(checkout.resolve("README"), "initialized");
+			assertMissingLargeGrammarFixture(checkout);
+			Path grammar = checkout.resolve("grammar/refactorme.g4");
+			Files.createDirectories(grammar.getParent());
+			Files.createDirectory(grammar);
+			assertMissingLargeGrammarFixture(checkout);
+			Files.delete(grammar);
+			Files.writeString(grammar, "grammar T;");
+			assertEquals(grammar, largeGrammarFixture(checkout));
+		}
+		finally {
+			assertTrue(FileUtil.delete(temp.toFile()));
+		}
+	}
+
+	private void assertMissingLargeGrammarFixture(Path checkout) throws IOException {
+		try {
+			largeGrammarFixture(checkout);
+		}
+		catch (AssertionError e) {
+			assertTrue(e.getMessage().contains("grammar/refactorme.g4"));
+			return;
+		}
+		fail("An initialized checkout without a regular grammar file must fail");
+	}
+
+	private static Path largeGrammarFixture(Path checkout) throws IOException {
+		if ( Files.notExists(checkout) ) return null;
+		if ( Files.isDirectory(checkout) ) {
+			try (DirectoryStream<Path> entries = Files.newDirectoryStream(checkout)) {
+				if ( !entries.iterator().hasNext() ) return null;
+			}
+		}
+		Path grammar = checkout.resolve("grammar/refactorme.g4");
+		assertTrue(grammar + " not found or not a regular file; check the antlr4-xl submodule checkout (git submodule update --init)",
+			Files.isRegularFile(grammar));
+		return grammar;
+	}
+
+	/** The curated version of the grammar whose typing was slow. */
 	public void testLargeGrammarHasNoBadCharacters() throws Exception {
-		Path oracle = Path.of("antlr4-xl/test/oracle_normal.g4");
-		if ( !Files.exists(oracle) ) return; // submodule not checked out
+		Path oracle = largeGrammarFixture(Path.of("antlr4-xl"));
+		if ( oracle==null ) return; // submodule not checked out
 		Lexer lexer = createLexer();
 		lexer.start(Files.readString(oracle));
 		int tokens = 0;

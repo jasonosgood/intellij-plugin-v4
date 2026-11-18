@@ -5,7 +5,7 @@ antlr4-xl checkout) adds package `xl.errors`: friendly, rustc-style syntax error
 grammar. Design: `antlr4-xl/docs/errors/error-handling.md` (after the merge), with
 `prechecks.md` and `sql-prechecks.md`.
 
-## Findings
+## Findings at the start of the plan
 - **The merge itself doesn't break the plugin.** A trial merge of `plugin-linter-api` with
   `merge-antlr-errors` conflicts only in xl's `CLAUDE.md` (both sides drop the Nateclipse rule),
   and the plugin's main and test code compile against it (`compileJava compileTestJava
@@ -42,6 +42,12 @@ grammar. Design: `antlr4-xl/docs/errors/error-handling.md` (after the merge), wi
    highlighting test fail rather than skip when the file is missing but the submodule is present.
    Run `./gradlew test` and, with `ANTLR_PERF=1`, re-baseline the timings cited in Javadoc.
 2. Add the `xl.errors` classes to `xlTools` in `build.gradle`.
+
+Status: A and B.2 are integrated on xl `main` and in the plugin's `xlTools` source set. B.1
+uses the curated fixture and has updated timing measurements. The full plugin test run currently
+exposes a separate parser-agreement failure: xl rejects aliased imports such as
+`import Alias = AliasOnly;`, which the plugin parser accepts. This upstream compatibility gap
+remains to be resolved; the agreement test has not been excluded.
 
 ### C. Plugin: use it in the preview
 The preview's input is the case `xl.errors` is built for: people using a language, not grammar

@@ -32,8 +32,9 @@ import java.util.function.Supplier;
  *  content, not timestamps or change events), and {@code ExternalAnnotator}'s split between a
  *  short read-locked collection and lock-free heavy work. Deviation from the platform's usual
  *  answer, {@code CachedValuesManager} with PSI dependencies: that computes inside a read
- *  action, and loading a large grammar (ANTLR's full analysis, ~3 s for
- *  {@code oracle_normal.g4}) can't be cancelled, so it would block write actions (typing) for
+ *  action, and loading a large grammar (ANTLR's full analysis, 3.3–4.8 s in three
+ *  {@code PreviewPerformanceTest} runs with {@code antlr4-xl/grammar/refactorme.g4}, declared
+ *  as {@code oracle_normal}) can't be cancelled, so it would block write actions (typing) for
  *  the whole load. Comparing content also ignores the content-change event that arrives after a
  *  project opens with nothing edited.
  *  <p>

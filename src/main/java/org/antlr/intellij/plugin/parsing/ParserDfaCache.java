@@ -15,8 +15,10 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 /** The prediction cache (DFA) of a loaded parser grammar, shared by every preview parse with
- *  it. A parser that starts with an empty DFA repeats all prediction work: on
- *  {@code oracle_normal.g4} a one-line query parses in ~290 ms cold and ~12 ms warm.
+ *  it. A parser that starts with an empty DFA repeats all prediction work: in three
+ *  {@code PreviewPerformanceTest} runs with {@code antlr4-xl/grammar/refactorme.g4}
+ *  (declared as {@code oracle_normal}), a one-line query took 362–759 ms cold and
+ *  33–55 ms warm. These timings depend on the machine and input.
  *  <p>
  *  Prior art: generated ANTLR parsers share a static {@code _decisionToDFA} and
  *  {@code _sharedContextCache} among all instances and threads; the runtime synchronizes

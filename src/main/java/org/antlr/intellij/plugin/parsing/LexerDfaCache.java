@@ -20,8 +20,10 @@ import java.util.WeakHashMap;
 
 /** The lexer side of {@link ParserDfaCache}: one ATN, DFA and context cache per loaded lexer
  *  grammar, shared by every preview lex with it. {@code Grammar.createLexerInterpreter}
- *  round-trips the ATN through the serializer on every call: ~15 ms per parse on
- *  {@code oracle_normal.g4}, about half of a warm parse, whatever the input's size.
+ *  round-trips the ATN through the serializer on every call. In three
+ *  {@code PreviewPerformanceTest} runs with {@code antlr4-xl/grammar/refactorme.g4}
+ *  (declared as {@code oracle_normal}), constructing an empty-input lexer averaged
+ *  10–16 ms without this cache and 0.04–0.12 ms with it. Timings depend on the machine.
  *  <p>
  *  Prior art: generated lexers share a static {@code _decisionToDFA} and ATN, as generated
  *  parsers do. Keyed weakly by the grammar object, as {@link ParserDfaCache} is, for the same

@@ -124,8 +124,10 @@ public class PreviewPanel extends JPanel implements ParsingResultSelectionListen
 
 	/** Used to avoid reparsing and also updating the parse tree upon each keystroke. Waits the
 	 *  IDE's autoreparse delay (Settings > Editor > General, 300 ms by default), as the editor's
-	 *  own analysis does after typing; nothing shows during it. A warm parse takes ~14 ms on
-	 *  {@code oracle_normal.g4}, so the wait is most of the delay before results update.
+	 *  own analysis does after typing; nothing shows during it. A one-line warm parse took
+	 *  33–55 ms in three {@code PreviewPerformanceTest} runs with
+	 *  {@code antlr4-xl/grammar/refactorme.g4} (declared as {@code oracle_normal}), so the wait
+	 *  was most of the delay before results updated in that measurement.
 	 */
 	private final MergingUpdateQueue updateQueue;
 
