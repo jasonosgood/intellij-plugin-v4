@@ -4,6 +4,10 @@ Open work on branch `grammar-tools`. Finished items move to [DONE.md](DONE.md), 
 work they belonged to; settled decisions go to [DECISIONS.md](DECISIONS.md), and lessons on
 working in this repo to [CLAUDE.md](../CLAUDE.md).
 
+## Merging antlr4-xl's syntax-error handling
+Plan and findings in [MERGE_ANTLR_XL.md](MERGE_ANTLR_XL.md): reconcile the xl branches, make
+`xl.errors` public, then use it for the preview's input errors.
+
 ## Left open from saving and code generation
 The work is in DONE.md ("Saving and code generation", items 43–56, and item 65); the rules
 are in [DECISIONS.md](DECISIONS.md).
